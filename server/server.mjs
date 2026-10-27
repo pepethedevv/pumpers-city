@@ -15,7 +15,7 @@ const MAX_PLAYERS = +env.MAX_PLAYERS || 600;
 const SITES = (env.ALLOWED_SITES || "pumperscity.com").split(",").map(s => s.trim().replace(/^www\./, "")).filter(Boolean);
 const DEV = env.DEV_OPEN === "1";            // local testing only: guests pick a level and may open boxes
 const SECRET = env.SERVER_SECRET || (env.SUPABASE_SERVICE_KEY ? crypto.createHash("sha256").update("pc-session:" + env.SUPABASE_SERVICE_KEY).digest("hex") : crypto.randomBytes(32).toString("hex"));
-const BOXES_PER_ROOM = 120, RESPAWN_MS = 30_000, JAM_MS = 2000;
+const BOXES_PER_ROOM = +env.BOXES_PER_ROOM || 120, RESPAWN_MS = 30_000, JAM_MS = 2000;
 const OPENS_PER_HOUR = +env.OPENS_PER_HOUR || 150;
 const TICK_MS = 100, VIEW_X = 900, VIEW_Y = 620;
 const TIERS = {
@@ -58,7 +58,10 @@ function rollXp() {
 const needle = (speed, ms) => { const u = (speed * ms / 1000) % 2; return u <= 1 ? u : 2 - u; };
 
 // ---------------- settings (one row in Supabase, edited in the table editor) ----------------
-let settings = { boxes_open: true, prize_amount: 0, prizes_active: 5, prizes_left: 0, wave: 1, max_wins_per_wallet: 1 };
+let settings = { boxes_open: true, prize_amount: 0, prizes_active: 5, prizes_left: 0, wave: 1, max_wins_per_wallet: 1, daily_top: [10000, 5000, 2500] };
+// the daily leaderboard runs from 00:00 to 00:00 UTC
+const today = () => new Date().toISOString().slice(0, 10);
+let curDay = today();
 let stats = { won: 0, sent: 0, wins: 0, recent: [] };
 async function loadSettings() {
   if (!dbReady()) return;
@@ -83,6 +86,7 @@ const known = new Map();   // wallet → { xp, opened, found, dirty }
 let nextId = 1, nextBox = 1;
 const prizeBoxes = new Set(); // box ids holding a prize right now; only the server knows them
 let takesInFlight = 0;
+let batch = 0; // prizes of the current batch still hidden; the next batch only starts once all of these are found
 
 function roomFor(mapKey) {
   for (let ch = 1; ; ch++) {
@@ -109,9 +113,13 @@ function dropRoom(r) {
   rooms.delete(r.key);
   refillPrizes();
 }
-// keep `prizes_active` prize boxes hidden somewhere in the city while the wave lasts
+// Prizes go out in batches: `prizes_active` are hidden at once, and only when every one of them has been
+// found does the next batch (up to what is left of `prizes_left`) get hidden somewhere in the city.
 function refillPrizes() {
-  const want = settings.boxes_open && dbReady() ? Math.max(0, Math.min(settings.prizes_active, settings.prizes_left - takesInFlight)) : 0;
+  const max = settings.boxes_open && dbReady() ? Math.max(0, settings.prizes_left - takesInFlight) : 0;
+  if (batch > max) batch = max;
+  if (batch === 0 && takesInFlight === 0 && max > 0) { batch = Math.min(settings.prizes_active, max); log("new prize batch:", batch); }
+  const want = batch;
   const live = [];
   for (const r of rooms.values()) for (const id of r.boxes.keys()) live.push(id);
   for (const id of [...prizeBoxes]) if (!live.includes(id)) prizeBoxes.delete(id);
@@ -193,8 +201,8 @@ async function hello(p, msg) {
     p.wallet = wallet;
     // XP lives in memory while the server runs (saved to Supabase every 15 s), so a quick reconnect never loses any
     if (!known.has(wallet)) {
-      const s = { xp: 0, opened: 0, found: 0, dirty: false };
-      if (dbReady()) try { const [row] = await db(`players?wallet=eq.${wallet}&select=xp,opened,found`); if (row) Object.assign(s, { xp: +row.xp, opened: +row.opened, found: +row.found }); } catch (e) { log("load player:", e.message); }
+      const s = { xp: 0, opened: 0, found: 0, day: curDay, dayXp: 0, dirty: false };
+      if (dbReady()) try { const [row] = await db(`players?wallet=eq.${wallet}&select=xp,opened,found,day,day_xp`); if (row) Object.assign(s, { xp: +row.xp, opened: +row.opened, found: +row.found, dayXp: row.day === curDay ? +row.day_xp : 0 }); } catch (e) { log("load player:", e.message); }
       if (!known.has(wallet)) known.set(wallet, s);
     }
     p.s = known.get(wallet);
@@ -205,7 +213,7 @@ async function hello(p, msg) {
   applyLook(p, msg.skin);
   p.ready = true;
   send(p, { t: "hi", id: p.id, token: wallet ? token(wallet) : null, wallet, err, name: p.name, level: p.acc.level, canOpen: p.acc.canOpen,
-    xp: p.s.xp, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
+    xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
     wins: stats.recent.filter(w => Date.now() - Date.parse(w.at) < 300_000).slice(0, 3) });
   sendBoard(p);
 }
@@ -243,9 +251,11 @@ async function hitLock(p, id, e) {
   // the box is yours: it disappears for everyone, XP is added, and the server alone knows if it held a prize
   r.boxes.delete(id);
   const isPrize = prizeBoxes.delete(id);
+  if (isPrize) batch--;
   p.opens.push(now);
   const xp = Math.round(rollXp() * TIERS[p.acc.level].xp);
-  p.s.xp += xp; p.s.opened++; p.s.dirty = true;
+  if (p.s.day !== curDay) { p.s.day = curDay; p.s.dayXp = 0; }
+  p.s.xp += xp; p.s.dayXp = (p.s.dayXp || 0) + xp; p.s.opened++; p.s.dirty = p.wallet ? true : false;
   roomSend(r, { t: "g", id, by: p.id }, p);
   const t = setTimeout(() => { r.timers.delete(t); if (rooms.get(r.key) === r) { spawnBox(r); refillPrizes(); } }, RESPAWN_MS);
   r.timers.add(t);
@@ -255,12 +265,13 @@ async function hitLock(p, id, e) {
     try { prize = +(await db("rpc/take_prize", { method: "POST", body: { p_wallet: p.wallet, p_district: MAP_NAMES[r.map] } })) || 0; }
     catch (e2) { log("take_prize:", e2.message); }
     takesInFlight--;
+    if (!prize) batch++; // not taken (this wallet already won this wave, etc.): it goes into another box
     if (prize) { settings.prizes_left = Math.max(0, settings.prizes_left - 1); p.s.found += prize; stats.won += prize; stats.wins++; }
-  }
-  refillPrizes(); // a prize that wasn't taken (wallet already won this wave, etc.) goes into another box
-  send(p, { t: "O", id, xp, total: p.s.xp, opened: p.s.opened, found: p.s.found, prize });
+  } else if (isPrize) batch++;
+  refillPrizes();
+  send(p, { t: "O", id, xp, total: p.s.xp, dayXp: p.s.dayXp, opened: p.s.opened, found: p.s.found, prize });
   if (prize) {
-    log("PRIZE", short(p.wallet), prize, MAP_NAMES[r.map]);
+    log("PRIZE", short(p.wallet), prize, MAP_NAMES[r.map], "· still hidden in this batch:", batch);
     const w = { who: p.name, wallet: p.wallet, amount: prize, district: MAP_NAMES[r.map], at: new Date().toISOString() };
     stats.recent.unshift({ who: short(p.wallet), amount: prize, district: w.district, sig: null, at: w.at }); stats.recent.length = Math.min(stats.recent.length, 10);
     allSend({ t: "W", ...w });
@@ -270,18 +281,19 @@ async function hitLock(p, id, e) {
 // ---------------- XP saving and leaderboard ----------------
 let board = [];
 async function saveXp() {
-  if (!dbReady()) return;
+  if (!dbReady()) return true;
   const rows = [];
-  for (const [wallet, s] of known) if (s.dirty) { rows.push({ wallet, name: short(wallet), xp: s.xp, opened: s.opened, found: s.found, updated_at: new Date().toISOString() }); s.dirty = false; }
-  if (!rows.length) return;
-  try { await db("players?on_conflict=wallet", { method: "POST", body: rows, prefer: "resolution=merge-duplicates" }); }
-  catch (e) { log("save xp:", e.message); for (const r of rows) known.get(r.wallet).dirty = true; }
+  for (const [wallet, s] of known) if (s.dirty) { rows.push({ wallet, name: short(wallet), xp: s.xp, opened: s.opened, found: s.found, day: s.day, day_xp: s.dayXp || 0, updated_at: new Date().toISOString() }); s.dirty = false; }
+  if (!rows.length) return true;
+  try { await db("players?on_conflict=wallet", { method: "POST", body: rows, prefer: "resolution=merge-duplicates" }); return true; }
+  catch (e) { log("save xp:", e.message); for (const r of rows) known.get(r.wallet).dirty = true; return false; }
 }
 async function loadBoard() {
   let rows = [];
-  if (dbReady()) try { rows = await db("players?select=wallet,xp&order=xp.desc&limit=10"); } catch (e) { log("board:", e.message); }
-  const m = new Map(rows.map(r => [r.wallet, +r.xp]));
-  for (const [w, s] of known) if (s.xp) m.set(w, Math.max(m.get(w) || 0, s.xp));
+  // today's XP only: the board starts from zero every day at 00:00 UTC
+  if (dbReady()) try { rows = await db(`players?day=eq.${curDay}&day_xp=gt.0&select=wallet,day_xp&order=day_xp.desc&limit=10`); } catch (e) { log("board:", e.message); }
+  const m = new Map(rows.map(r => [r.wallet, +r.day_xp]));
+  for (const [w, s] of known) if (s.day === curDay && s.dayXp) m.set(w, Math.max(m.get(w) || 0, s.dayXp));
   board = [...m].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([w, xp]) => ({ w, name: short(w), xp }));
 }
 const sendBoard = p => send(p, { t: "B", rows: board, online: players.size });
@@ -323,7 +335,7 @@ function tick() {
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   res.setHeader("access-control-allow-origin", "*");
-  if (u.pathname === "/status") { res.setHeader("content-type", "application/json"); res.setHeader("cache-control", "no-store"); return res.end(JSON.stringify({ online: players.size, won: stats.won, wins: stats.wins, recent: stats.recent })); }
+  if (u.pathname === "/status") { res.setHeader("content-type", "application/json"); res.setHeader("cache-control", "no-store"); return res.end(JSON.stringify({ online: players.size, won: stats.won, wins: stats.wins, recent: stats.recent, daily: settings.daily_top })); }
   if (u.pathname === "/" || u.pathname === "/health") return res.end("ok");
   res.statusCode = 404; res.end();
 });
@@ -378,5 +390,36 @@ setInterval(async () => {
 }, 300_000);
 process.on("SIGTERM", async () => { await saveXp(); process.exit(0); });
 
-await loadSettings(); await loadStats(); await loadBoard();
+// ---------------- daily reset ----------------
+// At 00:00 UTC: save everyone's XP, then the database picks the day's top 3 and puts their prizes
+// in MY PRIZES (award_daily does this once per day, even if called again).
+const fmtN = n => Number(n).toLocaleString("en-US");
+async function awardDay(day) {
+  if (!dbReady()) return;
+  try {
+    const n = await db("rpc/award_daily", { method: "POST", body: { p_day: day } });
+    if (!n) return;
+    const res = await db(`daily_results?day=eq.${day}&rank=gt.0&select=rank,wallet,amount&order=rank`);
+    log("daily winners", day, res.map(r => short(r.wallet) + " " + r.amount).join(", "));
+    return "Yesterday's winners: " + res.map(r => ["🥇", "🥈", "🥉"][r.rank - 1] + " " + short(r.wallet) + " " + fmtN(r.amount) + " $PUMP").join(" · ");
+  } catch (e) { log("award_daily:", e.message); }
+}
+let rolling = false;
+setInterval(async () => {
+  if (rolling || today() === curDay) return;
+  rolling = true;
+  const old = curDay;
+  // everyone's XP must be in the database before the winners are picked; if saving fails, try again in 15 s
+  if (!(await saveXp())) { rolling = false; return; }
+  const msg = await awardDay(old);
+  curDay = today(); board = [];
+  allSend({ t: "day", msg: "A new day has started. The leaderboard is back to zero." + (msg ? " " + msg : "") });
+  await loadStats(); await loadBoard();
+  rolling = false;
+}, 15_000);
+
+await loadSettings(); await loadStats();
+// the server may have been off at midnight: hand out yesterday's prizes now (no-op if already done)
+{ const y = new Date(Date.now() - 86400_000).toISOString().slice(0, 10); await awardDay(y); }
+await loadBoard();
 server.listen(PORT, () => log(`Pumpers City server on :${PORT} · db ${dbReady() ? "on" : "off"} · helius ${env.HELIUS_API_KEY ? "on" : "off"}${DEV ? " · DEV" : ""}`));

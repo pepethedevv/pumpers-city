@@ -79,3 +79,43 @@ create or replace view prize_stats as
          count(*) as wins
   from prizes;
 revoke all on prize_stats from anon, authenticated;
+
+-- ================= DAILY LEADERBOARD =================
+-- The board ranks today's XP (00:00 to 00:00 UTC). At the reset the game server calls award_daily(),
+-- which gives the top 3 their prizes in MY PRIZES. Amounts: game_settings.daily_top (1st, 2nd, 3rd).
+alter table players add column if not exists day date;
+alter table players add column if not exists day_xp bigint not null default 0;
+create index if not exists players_day_idx on players (day, day_xp desc);
+alter table game_settings add column if not exists daily_top numeric[] not null default '{10000,5000,2500}';
+
+create table if not exists daily_results (
+  day    date not null,
+  rank   int  not null,          -- 1, 2, 3 (0 = nobody played that day)
+  wallet text,
+  xp     bigint,
+  amount numeric,
+  primary key (day, rank)
+);
+alter table daily_results enable row level security;
+
+create or replace function award_daily(p_day date) returns int
+language plpgsql as $$
+declare s game_settings; r record; i int := 0;
+begin
+  perform pg_advisory_xact_lock(hashtext('award_daily'));
+  if exists (select 1 from daily_results where day = p_day) then return 0; end if;   -- already done
+  select * into s from game_settings where id = 1;
+  for r in select wallet, day_xp from players
+           where day = p_day and day_xp > 0
+           order by day_xp desc, updated_at asc
+           limit coalesce(array_length(s.daily_top, 1), 0) loop
+    i := i + 1;
+    insert into daily_results (day, rank, wallet, xp, amount) values (p_day, i, r.wallet, r.day_xp, s.daily_top[i]);
+    if s.daily_top[i] > 0 then
+      insert into prizes (wallet, amount, district) values (r.wallet, s.daily_top[i], 'DAILY TOP ' || i);
+    end if;
+  end loop;
+  if i = 0 then insert into daily_results (day, rank) values (p_day, 0); end if;
+  return i;
+end $$;
+revoke execute on function award_daily(date) from public, anon, authenticated;

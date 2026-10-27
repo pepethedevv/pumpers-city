@@ -58,12 +58,13 @@ Prizes are only ever created by the server. The browser never decides a prize ou
 ## Game server (`server/`)
 
 Runs on Railway with Root Directory `server` (`npm start`). Variables: `HELIUS_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `PORT`.
-Optional: `ALLOWED_SITES` (default `pumperscity.com`), `CHANNEL_CAP` (100), `MAX_PLAYERS` (600), `OPENS_PER_HOUR` (150).
+Optional: `ALLOWED_SITES` (default `pumperscity.com`), `CHANNEL_CAP` (100), `MAX_PLAYERS` (600), `OPENS_PER_HOUR` (150), `BOXES_PER_ROOM` (120).
 
 - Login: the same signed wallet message as the site, then holdings through Helius (re-checked every 5 minutes).
 - Each district is split into channels of 100 players. Positions go only to players nearby, 10 times a second.
 - Movement speed and walls are checked on the server; box opening needs you next to the box; lock timing is checked against the server's needle.
-- Prize waves come from the `game_settings` row: `prizes_active` boxes hold a prize at any time until `prizes_left` runs out. Only the server knows which ones.
+- Prize waves come from the `game_settings` row and go out in batches: `prizes_active` prize boxes are hidden at once, and the next batch is hidden only after all of them are found, until `prizes_left` runs out. Only the server knows which boxes they are.
+- Daily leaderboard: ranks today's XP (00:00–00:00 UTC). At the reset the server saves XP and calls `award_daily()`, which puts `daily_top` prizes (1st, 2nd, 3rd) into the winners' MY PRIZES, once per day.
 - `GET /status` → players online, total $PUMP won, recent winners (used by the landing page).
 
 `server/mapgen.mjs` and `server/lib.mjs` are generated from the site's map code and `api/_lib.js` (`build_server.py`), so the server and the browser always agree on maps and rules.

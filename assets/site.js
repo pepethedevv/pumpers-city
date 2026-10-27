@@ -252,6 +252,8 @@
       $("liveOnline").textContent = fmt(j.online || 0);
       $("liveWon").textContent = fmt(j.won || 0); show("liveWonBox", j.won > 0);
       winners = j.recent || []; show("winnersBtn", winners.length > 0);
+      // daily leaderboard prizes in the guide follow the server's settings
+      if (Array.isArray(j.daily)) document.querySelectorAll("[data-daily]").forEach(el => { const v = j.daily[+el.dataset.daily]; if (v) el.textContent = fmt(v); });
       $("liveOnline").parentElement.hidden = !(j.online > 0);
       show("livebar", j.online > 0 || j.won > 0);
     } catch { show("livebar", false); }

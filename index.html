@@ -36,9 +36,9 @@
 <div class="hud" id="mapbox" hidden><div class="panel" id="district">DOWNTOWN</div><canvas id="minimap"></canvas><div class="hint">TAP MAP OR PRESS M TO ENLARGE</div></div>
 <div id="bigmap" hidden><canvas id="bigcanvas"></canvas><div>WHITE = YOU · PURPLE = BLACK HOLES · TAP TO CLOSE</div></div>
 <div class="hud panel" id="board" hidden>
-  <h3>LEADERBOARD</h3>
+  <h3>DAILY LEADERBOARD</h3>
   <ol id="rows"></ol>
-  <div class="tag">Top 3 win prizes</div>
+  <div class="tag">Daily · top 3 win $PUMP</div>
 </div>
 <div class="hud" id="feed"></div>
 <div class="hud" id="wins"></div>
@@ -161,7 +161,7 @@
         <ol>
           <li><b>Play as guest.</b> No wallet needed. You get a basic character and can explore every district, but you can't open boxes.</li>
           <li><b>Connect your wallet</b> (Phantom, Solflare or Backpack). We check your $PUMPERS tokens and Pumpers NFTs and set your level. If you own NFTs, you pick one and play as that character.</li>
-          <li><b>Find a box, stand next to it, pick the lock.</b> Collect XP, climb the leaderboard and hope for a prize.</li>
+          <li><b>Find a box, stand next to it, pick the lock.</b> Collect XP, climb the daily leaderboard and hope for a prize.</li>
         </ol>
         <p class="note">We never ask for your seed phrase or private key. Connecting only shares your public address. Signing the login message is free and moves no funds.</p>
       </section>
@@ -260,7 +260,18 @@
 
       <section id="g-board">
         <h2>LEADERBOARD</h2>
-        <p>Every box you open adds XP to your wallet's total. The leaderboard ranks players by XP, and the <b>top 3 win prizes</b>. Prize details are announced on <a href="https://x.com/pumperscity" target="_blank" rel="noopener">@pumperscity</a>.</p>
+        <p>The leaderboard is <b>daily</b>. Every box you open adds XP, and the players with the most XP that day win $PUMP. It resets every day at <b>00:00 UTC</b>, so everyone starts from zero again.</p>
+        <table class="daily">
+          <tr><th>Place</th><th>Daily prize</th></tr>
+          <tr><td>🥇 1st</td><td><b data-daily="0">10,000</b> $PUMP</td></tr>
+          <tr><td>🥈 2nd</td><td><b data-daily="1">5,000</b> $PUMP</td></tr>
+          <tr><td>🥉 3rd</td><td><b data-daily="2">2,500</b> $PUMP</td></tr>
+        </table>
+        <ul>
+          <li>Winners are picked right at the reset. The prize shows up in their MY PRIZES, ready to claim.</li>
+          <li>These prizes will grow as the project's earnings grow.</li>
+          <li>Your level and total XP never reset. Only the daily race does.</li>
+        </ul>
       </section>
 
       <section id="g-districts">

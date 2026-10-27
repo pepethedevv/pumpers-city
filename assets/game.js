@@ -1573,7 +1573,7 @@ function attractTour(m) {
 // Talks to the game server (PC_CONFIG.GAME_SERVER). Without a server the game runs alone in the browser
 // exactly as before: local boxes, XP only, no prizes.
 const NET = {
-  ws: null, live: false, up: false, token: null, wallet: null, profile: null, room: null, board: [], online: 0,
+  ws: null, live: false, up: false, dayXp: 0, token: null, wallet: null, profile: null, room: null, board: [], online: 0,
   last: null, lastT: 0, retry: 0, stopped: true, onHi: null,
   url() {
     const q = new URLSearchParams(location.search).get("server");
@@ -1637,6 +1637,7 @@ const NET = {
         const first = !this.up && this.onHi;
         this.up = true; this.retry = 0; this.token = m.token || this.token; this.wallet = m.wallet || this.wallet;
         Object.assign(state, { tier: TIERS[m.level] || TIERS.none, explorer: !m.canOpen, xp: m.xp, opened: m.opened, found: m.found });
+        this.dayXp = m.dayXp || 0;
         this.online = m.online;
         if (m.err && this.profile.auth && !m.wallet) feed("Wallet check expired. Leave and connect again to open boxes.");
         if (first) { const f = this.onHi; this.onHi = null; f(m); }
@@ -1655,7 +1656,7 @@ const NET = {
       case "g": if (on) sc.boxGone(m.id); break;
       case "pos": if (on) sc.correct(m.x, m.y); break;
       case "L": if (on) sc.lockStart(m); break;
-      case "O": if (on) sc.lockResult(m); break;
+      case "O": this.dayXp = m.dayXp ?? this.dayXp; if (on) sc.lockResult(m); break;
       case "X": if (on) sc.lockMiss(m.id); break;
       case "D": if (sc) sc.denied(m); break;
       case "W": if (m.wallet !== this.wallet) announceWin(m.who, m.amount, m.district, false); break;
@@ -1666,6 +1667,8 @@ const NET = {
         updateHud(); break;
       case "pi": this.send({ t: "po", s: m.s }); break;
       case "bye": feed(m.msg); break;
+      case "F": feed(m.msg, true); break;
+      case "day": this.dayXp = 0; this.board = []; updateHud(); feed(m.msg, true); break;
     }
   },
 };
@@ -1832,14 +1835,23 @@ function updateHud() {
   let rows;
   if (NET.live) {
     // live board from the server: top players by XP, you highlighted (or added under it)
-    rows = NET.board.map(r => ({ n: r.name, x: r.w === NET.wallet ? Math.max(r.xp, state.xp) : r.xp, me: r.w === NET.wallet }));
+    // daily board from the server: today's XP, you highlighted (or added under it)
+    rows = NET.board.map(r => ({ n: r.name, x: r.w === NET.wallet ? Math.max(r.xp, NET.dayXp) : r.xp, me: r.w === NET.wallet }));
+    if (!rows.some(r => r.me) && NET.dayXp > 0) rows.push({ n: "YOU", x: NET.dayXp, me: true });
     rows.sort((a, b) => b.x - a.x); rows = rows.slice(0, 6);
-    if (!rows.some(r => r.me)) rows.push({ n: "YOU", x: state.xp, me: true, rank: "–" });
-    const tag = $("board").querySelector(".tag"); if (tag) tag.textContent = "Top 3 win prizes · " + NET.online + " online";
+    if (!rows.some(r => r.me)) rows.push({ n: "YOU", x: NET.dayXp, me: true, rank: "–" });
+    boardTag();
   } else rows = BOARD.map(([n, x]) => ({ n, x })).concat([{ n: "YOU", x: state.xp, me: true }]).sort((a, b) => b.x - a.x).slice(0, 6);
   $("rows").innerHTML = rows.map((r, i) =>
     `<li class="${r.me ? "me" : ""}"><span>${r.rank || (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1 + ".")} ${esc(r.n)}</span><span>${r.x}</span></li>`).join("");
 }
+// "Top 3 win $PUMP · resets in 5h 12m · 34 online" (the race resets at 00:00 UTC)
+function boardTag() {
+  const tag = $("board").querySelector(".tag"); if (!tag) return;
+  const now = new Date(), next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1), m = Math.max(1, Math.round((next - now) / 60000));
+  tag.textContent = "Top 3 win $PUMP · resets in " + (m >= 60 ? Math.floor(m / 60) + "h " : "") + (m % 60) + "m · " + NET.online + " online";
+}
+setInterval(() => { if (NET.live && !$("board").hidden) boardTag(); }, 30000);
 let toastTimer;
 function toast(s, color) { const t = $("toast"); t.textContent = s; t.style.color = color; t.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.opacity = 0, 1800); }
 function feed(s, win) { const d = document.createElement("div"); d.textContent = s; if (win) d.className = "win"; $("feed").prepend(d); setTimeout(() => d.remove(), 6200); while ($("feed").children.length > 4) $("feed").lastChild.remove(); }
@@ -1922,7 +1934,7 @@ const PC = {
     NET.live = !!hi;
     ["stats", "mapbox", "board", "help", "ingame"].forEach(id => $(id).hidden = false);
     $("help").textContent = "WASD / arrows, or hold / drag to move · stand by a box and press E · M opens the map · walk into a black hole to travel";
-    $("board").querySelector(".tag").textContent = NET.live ? "Top 3 win prizes · " + NET.online + " online" : BOARD.length ? "Top 3 win prizes · demo names" : "Top 3 win prizes · live board at launch";
+    if (NET.live) boardTag(); else $("board").querySelector(".tag").textContent = BOARD.length ? "Daily · top 3 win $PUMP · demo names" : "Daily · top 3 win $PUMP · live at launch";
     this.game.scene.getScene("city").scene.restart({ map: "downtown" });
     updateHud(); setTimeout(placeWins, 50);
     if (hi) for (const w of (hi.wins || []).slice().reverse()) announceWin(w.who, w.amount, w.district, false);
