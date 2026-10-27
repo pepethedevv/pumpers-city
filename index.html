@@ -102,6 +102,20 @@
   </div>
 </div>
 
+<!-- ============ PICK A NAME ============ -->
+<div class="modal" id="nameModal" hidden>
+  <div class="sheet">
+    <button type="button" class="close" data-close aria-label="Close">×</button>
+    <h2>PICK A NAME</h2>
+    <p class="muted">Everyone sees it under your Pumper and on the leaderboard.</p>
+    <form id="nameForm" autocomplete="off">
+      <input id="nameInput" class="nameinput" maxlength="16" spellcheck="false" placeholder="your name" aria-label="Your name">
+      <div id="nameMsg" class="namemsg">3-16 letters, numbers or _</div>
+      <button type="submit" class="btn gold wide" id="nameGo">ENTER THE CITY</button>
+    </form>
+  </div>
+</div>
+
 <!-- ============ RECENT WINNERS ============ -->
 <div class="modal" id="winnersModal" hidden>
   <div class="sheet">

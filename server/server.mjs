@@ -25,6 +25,22 @@ const TIERS = {
 const ONES = ["Trencher", "Diamond", "Lava", "Ghost", "Glitch", "Robot", "Zombie", "Ice", "The Mayor", "Shadow"];
 const MAPKEYS = Object.keys(MAP_NAMES);
 const short = w => w.slice(0, 4) + "…" + w.slice(-4);
+// player names: 3-16 letters, numbers or _, unique (case-insensitive), nothing that looks official
+const RESERVED = /admin|support|official|pumperscity|moderator|^mod$|^dev$|^team$|^guest$|^you$/i;
+function checkName(n) {
+  n = String(n || "").trim();
+  if (!/^[A-Za-z0-9_]{3,16}$/.test(n)) return { err: "Use 3-16 letters, numbers or _" };
+  if (RESERVED.test(n)) return { err: "That name isn't allowed" };
+  return { name: n };
+}
+// is this name used by someone else (online now, or a wallet that saved it before)?
+async function nameTaken(name, wallet) {
+  const k = name.toLowerCase();
+  for (const o of players.values()) if (o.nick && o.nick.toLowerCase() === k && (!wallet || o.wallet !== wallet)) return true;
+  for (const [w, s] of known) if (w !== wallet && s.name && s.name.toLowerCase() === k) return true;
+  if (dbReady()) try { const r = await db(`players?name_key=eq.${encodeURIComponent(k)}${wallet ? "&wallet=neq." + wallet : ""}&select=wallet&limit=1`); if (r.length) return true; } catch (e) { log("name check:", e.message); }
+  return false;
+}
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 // ---------------- maps (same generator as the browser, so walls and boxes line up exactly) ----------------
@@ -49,6 +65,16 @@ function arrival(m, fromKey) {
     if (x >= 0 && y >= 0 && x < m.W && y < m.H && m.reach[y * m.W + x] && !SOLID.has(m.g[y][x])) { const X = x * T + 8, Y = y * T + 8; if (!blocked(m, X, Y)) return { x: X, y: Y }; }
   }
   return { x: m.spawn.x * T + 8, y: m.spawn.y * T + 8 };
+}
+// players entering a district start a few steps apart instead of on top of each other
+function spawnSpot(m) {
+  const c = { x: m.spawn.x * T + 8, y: m.spawn.y * T + 8 };
+  for (let k = 0; k < 40; k++) {
+    const x = c.x + Math.round((Math.random() - 0.5) * 120), y = c.y + Math.round((Math.random() - 0.5) * 80);
+    const tx = Math.floor(x / T), ty = Math.floor(y / T);
+    if (tx >= 0 && ty >= 0 && tx < m.W && ty < m.H && m.reach[ty * m.W + tx] && !blocked(m, x, y) && m.portals.every(P => Math.hypot(x - (P.x * T + 8), y - (P.y * T + 8)) > 30)) return { x, y };
+  }
+  return c;
 }
 function rollXp() {
   const r = Math.random(), n = k => Math.floor(Math.random() * k);
@@ -184,7 +210,7 @@ function applyLook(p, skin) {
   p.trail = s?.o || (p.acc.trail ? "whale" : null);
   if (DEV && p.dev?.trail !== undefined && !s?.o) p.trail = p.dev.trail;
   const nft = s && p.nfts.find(n => (s.o ? n.oneofone === s.o : n.number === s.n));
-  p.name = p.wallet ? (nft ? (s.o || "#" + nft.number) : short(p.wallet)) : (DEV && p.dev?.name ? String(p.dev.name).slice(0, 16) : "Guest");
+  p.name = p.nick || (p.wallet ? (nft ? (s.o || "#" + nft.number) : short(p.wallet)) : (DEV && p.dev?.name ? String(p.dev.name).slice(0, 16) : "Guest"));
 }
 async function hello(p, msg) {
   let wallet = null, err = null;
@@ -202,12 +228,20 @@ async function hello(p, msg) {
     // XP lives in memory while the server runs (saved to Supabase every 15 s), so a quick reconnect never loses any
     if (!known.has(wallet)) {
       const s = { xp: 0, opened: 0, found: 0, day: curDay, dayXp: 0, dirty: false };
-      if (dbReady()) try { const [row] = await db(`players?wallet=eq.${wallet}&select=xp,opened,found,day,day_xp`); if (row) Object.assign(s, { xp: +row.xp, opened: +row.opened, found: +row.found, dayXp: row.day === curDay ? +row.day_xp : 0 }); } catch (e) { log("load player:", e.message); }
+      if (dbReady()) try { const [row] = await db(`players?wallet=eq.${wallet}&select=xp,opened,found,day,day_xp,name,name_key`); if (row) Object.assign(s, { xp: +row.xp, opened: +row.opened, found: +row.found, dayXp: row.day === curDay ? +row.day_xp : 0, name: row.name_key ? row.name : null }); } catch (e) { log("load player:", e.message); }
       if (!known.has(wallet)) known.set(wallet, s);
     }
     p.s = known.get(wallet);
   }
   if (DEV && msg.dev) p.dev = msg.dev;
+  // the name the player picked; if someone grabbed it a moment ago, add a number
+  const cn = checkName(msg.nick);
+  if (cn.name) {
+    let n = cn.name;
+    for (let k = 0; k < 20 && await nameTaken(n, wallet); k++) n = cn.name.slice(0, 13) + Math.floor(10 + Math.random() * 990);
+    p.nick = n;
+    if (wallet && p.s.name !== n) { p.s.name = n; p.s.dirty = true; }
+  } else if (wallet && p.s.name) p.nick = p.s.name;
   try { await access(p); } catch (e) { log("holdings:", e.message); p.nfts = []; p.acc = { canOpen: false, level: "none", trail: false }; err = err || "holdings check failed"; }
   if (DEV && p.dev) p.acc = { canOpen: !!p.dev.canOpen, level: TIERS[p.dev.tier] ? p.dev.tier : "none", trail: false };
   applyLook(p, msg.skin);
@@ -283,7 +317,7 @@ let board = [];
 async function saveXp() {
   if (!dbReady()) return true;
   const rows = [];
-  for (const [wallet, s] of known) if (s.dirty) { rows.push({ wallet, name: short(wallet), xp: s.xp, opened: s.opened, found: s.found, day: s.day, day_xp: s.dayXp || 0, updated_at: new Date().toISOString() }); s.dirty = false; }
+  for (const [wallet, s] of known) if (s.dirty) { rows.push({ wallet, name: s.name || short(wallet), name_key: s.name ? s.name.toLowerCase() : null, xp: s.xp, opened: s.opened, found: s.found, day: s.day, day_xp: s.dayXp || 0, updated_at: new Date().toISOString() }); s.dirty = false; }
   if (!rows.length) return true;
   try { await db("players?on_conflict=wallet", { method: "POST", body: rows, prefer: "resolution=merge-duplicates" }); return true; }
   catch (e) { log("save xp:", e.message); for (const r of rows) known.get(r.wallet).dirty = true; return false; }
@@ -291,10 +325,10 @@ async function saveXp() {
 async function loadBoard() {
   let rows = [];
   // today's XP only: the board starts from zero every day at 00:00 UTC
-  if (dbReady()) try { rows = await db(`players?day=eq.${curDay}&day_xp=gt.0&select=wallet,day_xp&order=day_xp.desc&limit=10`); } catch (e) { log("board:", e.message); }
-  const m = new Map(rows.map(r => [r.wallet, +r.day_xp]));
-  for (const [w, s] of known) if (s.day === curDay && s.dayXp) m.set(w, Math.max(m.get(w) || 0, s.dayXp));
-  board = [...m].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([w, xp]) => ({ w, name: short(w), xp }));
+  if (dbReady()) try { rows = await db(`players?day=eq.${curDay}&day_xp=gt.0&select=wallet,day_xp,name&order=day_xp.desc&limit=10`); } catch (e) { log("board:", e.message); }
+  const m = new Map(rows.map(r => [r.wallet, +r.day_xp])), names = new Map(rows.map(r => [r.wallet, r.name]));
+  for (const [w, s] of known) { if (s.day === curDay && s.dayXp) m.set(w, Math.max(m.get(w) || 0, s.dayXp)); if (s.name) names.set(w, s.name); }
+  board = [...m].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([w, xp]) => ({ w, name: names.get(w) || short(w), xp }));
 }
 const sendBoard = p => send(p, { t: "B", rows: board, online: players.size });
 
@@ -336,6 +370,15 @@ const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   res.setHeader("access-control-allow-origin", "*");
   if (u.pathname === "/status") { res.setHeader("content-type", "application/json"); res.setHeader("cache-control", "no-store"); return res.end(JSON.stringify({ online: players.size, won: stats.won, wins: stats.wins, recent: stats.recent, daily: settings.daily_top })); }
+  // name check for the "pick a name" screen: /name?n=Name&w=wallet
+  if (u.pathname === "/name") {
+    res.setHeader("content-type", "application/json"); res.setHeader("cache-control", "no-store");
+    const w = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(u.searchParams.get("w") || "") ? u.searchParams.get("w") : null;
+    const cn = checkName(u.searchParams.get("n"));
+    if (cn.err) return res.end(JSON.stringify({ ok: false, err: cn.err }));
+    nameTaken(cn.name, w).then(t => res.end(JSON.stringify(t ? { ok: false, err: "That name is taken" } : { ok: true })));
+    return;
+  }
   if (u.pathname === "/" || u.pathname === "/health") return res.end("ok");
   res.statusCode = 404; res.end();
 });
@@ -357,7 +400,7 @@ wss.on("connection", (ws, req) => {
       if (m.t === "hello" && !p.ready && !p.helloing) { p.helloing = true; await hello(p, m); return; }
       if (!p.ready) return;
       switch (m.t) {
-        case "j": if (MAP_NAMES[m.map]) joinRoom(p, m.map, arrival(getMap(m.map), null)); break;
+        case "j": if (MAP_NAMES[m.map]) joinRoom(p, m.map, spawnSpot(getMap(m.map))); break;
         case "m": move(p, m.x, m.y, m.f); break;
         case "go": travel(p, m.to); break;
         case "o": openBox(p, m.id | 0); break;
@@ -400,8 +443,9 @@ async function awardDay(day) {
     const n = await db("rpc/award_daily", { method: "POST", body: { p_day: day } });
     if (!n) return;
     const res = await db(`daily_results?day=eq.${day}&rank=gt.0&select=rank,wallet,amount&order=rank`);
+    const nm = w => known.get(w)?.name || short(w);
     log("daily winners", day, res.map(r => short(r.wallet) + " " + r.amount).join(", "));
-    return "Yesterday's winners: " + res.map(r => ["🥇", "🥈", "🥉"][r.rank - 1] + " " + short(r.wallet) + " " + fmtN(r.amount) + " $PUMP").join(" · ");
+    return "Yesterday's winners: " + res.map(r => ["🥇", "🥈", "🥉"][r.rank - 1] + " " + nm(r.wallet) + " " + fmtN(r.amount) + " $PUMP").join(" · ");
   } catch (e) { log("award_daily:", e.message); }
 }
 let rolling = false;

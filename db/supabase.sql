@@ -119,3 +119,7 @@ begin
   return i;
 end $$;
 revoke execute on function award_daily(date) from public, anon, authenticated;
+
+-- ================= PLAYER NAMES =================
+alter table players add column if not exists name_key text;   -- lowercase name, for "is this name taken"
+create index if not exists players_name_idx on players (name_key);

@@ -221,3 +221,9 @@ details p { margin: 10px 0 0 !important; color: #d6cfe8; }
 .livebar > i { width: 7px; height: 7px; border-radius: 50%; background: #5ae08a; box-shadow: 0 0 6px #5ae08a; animation: livepulse 1.6s ease-in-out infinite; }
 .livebar .link { font: 8px var(--pixel); }
 @keyframes livepulse { 50% { opacity: .35; } }
+
+/* pick a name */
+.nameinput { width: 100%; box-sizing: border-box; margin: 6px 0 8px; padding: 14px 12px; font: 14px var(--pixel); color: var(--fg); background: #0c0a14; border: 2px solid var(--line); border-radius: 6px; outline: none; }
+.nameinput:focus { border-color: var(--gold); }
+.namemsg { min-height: 18px; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+.namemsg.err { color: #ff8a8a; }

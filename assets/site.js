@@ -42,7 +42,34 @@
 
   $("guest").addEventListener("click", () => {
     if (window.PC_DEMO) return openDemo();
-    enter({ name: "Guest", tier: "none", canOpen: false });
+    askName({ name: "Guest", tier: "none", canOpen: false });
+  });
+
+  // ---------- pick a name (guests and wallets) ----------
+  const serverHttp = () => (new URLSearchParams(location.search).get("server") || cfg.GAME_SERVER || "").replace(/^ws/, "http").replace(/\/$/, "");
+  const NAME_RE = /^[A-Za-z0-9_]{3,16}$/;
+  let nameFor = null;
+  function askName(profile) {
+    nameFor = profile;
+    document.querySelectorAll(".modal").forEach(m => m.hidden = true);
+    let saved = ""; try { saved = localStorage.getItem("pc_name") || ""; } catch {}
+    $("nameInput").value = saved; $("nameMsg").textContent = "3-16 letters, numbers or _"; $("nameMsg").className = "namemsg";
+    $("nameGo").disabled = false; $("nameGo").textContent = "ENTER THE CITY";
+    show("nameModal"); setTimeout(() => $("nameInput").focus(), 50);
+  }
+  $("nameInput").addEventListener("input", () => { $("nameMsg").className = "namemsg"; $("nameMsg").textContent = "3-16 letters, numbers or _"; });
+  $("nameForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const n = $("nameInput").value.trim(), msg = $("nameMsg"), bad = t => { msg.textContent = t; msg.className = "namemsg err"; $("nameGo").disabled = false; $("nameGo").textContent = "ENTER THE CITY"; };
+    if (!NAME_RE.test(n)) return bad("Use 3-16 letters, numbers or _");
+    $("nameGo").disabled = true; $("nameGo").textContent = "CHECKING…";
+    const base = serverHttp();
+    if (base) try {
+      const j = await (await fetch(`${base}/name?n=${encodeURIComponent(n)}${walletCtx ? "&w=" + walletCtx.pk : ""}`, { cache: "no-store" })).json();
+      if (!j.ok) return bad(j.err || "Try another name");
+    } catch {} // server unreachable: the game still starts
+    try { localStorage.setItem("pc_name", n); } catch {}
+    nameFor.nick = n; enter(nameFor);
   });
 
   // ---------- demo characters (?demo=1) ----------
@@ -171,7 +198,7 @@
     renderPicker(d.nfts || []);
     $("accessTitle").textContent = "YOUR PASS";
     $("enter").textContent = "ENTER THE CITY";
-    $("enter").onclick = () => { enter(profileFor(chosen)); $("switch").hidden = !((d.nfts || []).length > 1); show("prizesBtn"); refreshPrizes(); };
+    $("enter").onclick = () => { askName(profileFor(chosen)); $("switch").hidden = !((d.nfts || []).length > 1); show("prizesBtn"); refreshPrizes(); };
     show("accessModal");
   }
   // switch Pumper while playing
@@ -181,7 +208,7 @@
     renderPicker(pass.data.nfts || []);
     $("accessTitle").textContent = "SWITCH PUMPER";
     $("enter").textContent = "PLAY AS THIS PUMPER";
-    $("enter").onclick = () => { show("accessModal", false); PC.setCharacter(profileFor(chosen)); };
+    $("enter").onclick = () => { show("accessModal", false); PC.setCharacter({ ...profileFor(chosen), nick: nameFor && nameFor.nick }); };
     show("accessModal");
   });
   $("leave").addEventListener("click", () => { $("switch").hidden = true; show("prizesBtn", false); });

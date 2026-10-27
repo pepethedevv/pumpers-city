@@ -1168,6 +1168,8 @@ class City extends Phaser.Scene {
     if (back) sp = this.nearFree(back.x, back.y) || sp;
     this.player = this.add.image(sp.x, sp.y, upTex(this, state.tex || "p_Explorer")).setOrigin(0.5, 0.9).setScale(0.25);
     this.player.shadow = this.add.image(sp.x, sp.y + 1, "shadow");
+    // your own name, under your Pumper
+    this.myTag = this.attract ? null : nameTag(this, sp.x, sp.y, state.nick || "You", true);
     // attract mode: an invisible camera rig drifts around downtown behind the landing screen
     if (this.attract) { this.player.setVisible(false); this.player.shadow.setVisible(false); this.tour = attractTour(m); this.tourI = 0; Object.assign(this.player, this.tour[0]); sp = { ...this.tour[0] }; }
     cam.startFollow(this.player, true, 0.15, 0.15); cam.centerOn(sp.x, sp.y);
@@ -1244,7 +1246,7 @@ class City extends Phaser.Scene {
     if (this.others.has(p.id)) this.removeOther(p.id);
     const s = this.add.image(p.x, p.y, upTex(this, "p_Explorer")).setOrigin(0.5, 0.9).setScale(0.25).setFlipX(!!p.f);
     const shadow = this.add.image(p.x, p.y + 1, "shadow");
-    const label = this.add.text(p.x, p.y - 20, p.name, { fontFamily: '"Press Start 2P"', fontSize: "6px", color: "#f2ecff", stroke: "#140e1e", strokeThickness: 2 }).setOrigin(0.5).setResolution(4);
+    const label = nameTag(this, p.x, p.y, p.name, false);
     const o = { id: p.id, s, shadow, label, tx: p.x, ty: p.y, trail: p.trail, i: 0, lastTrail: 0 };
     this.others.set(p.id, o);
     this.skinOther(o, p.skin);
@@ -1272,7 +1274,7 @@ class City extends Phaser.Scene {
       const moving = d > 0.6;
       s.rotation = moving ? Math.sin(time / 70 + o.id) * 0.06 : 0;
       s.setDepth(s.y); o.shadow.setPosition(s.x, s.y + 1).setDepth(s.y - 0.5);
-      o.label.setPosition(Math.round(s.x), Math.round(s.y - 20)).setDepth(s.y + 0.5);
+      o.label.setPosition(Math.round(s.x), Math.round(s.y + 3));
       const tr = moving && o.trail && TRAILS[o.trail];
       if (tr && time - o.lastTrail > tr.every && this.inView(s.x, s.y)) { o.lastTrail = time; o.i++; tr.spawn(this, s, o.i); }
     }
@@ -1503,6 +1505,7 @@ class City extends Phaser.Scene {
       p.rotation = Math.sin(time / 70) * 0.06;
     } else p.rotation = 0;
     p.setDepth(p.y); p.shadow.setPosition(p.x, p.y + 1).setDepth(p.y - 0.5);
+    if (this.myTag) this.myTag.setPosition(Math.round(p.x), Math.round(p.y + 3));
     if (this.live) { NET.sendPos(p.x, p.y, p.flipX); this.othersStep(time, dt); }
 
     this.npcStep(time, dt);
@@ -1569,6 +1572,12 @@ function attractTour(m) {
   return [P(vx[0], hy[0]), P(vx[1], hy[0]), P(vx[1], hy[1]), P(vx[0], hy[1])];
 }
 
+// small name plate under a character
+function nameTag(scene, x, y, text, mine) {
+  return scene.add.text(Math.round(x), Math.round(y + 3), text, { fontFamily: '"Press Start 2P"', fontSize: "5px", color: mine ? "#ffe6a0" : "#ece6f8", backgroundColor: "rgba(18,14,30,0.6)", padding: { x: 2, y: 1 } })
+    .setOrigin(0.5, 0).setResolution(6).setDepth(100000.5);
+}
+
 // ================= MULTIPLAYER =================
 // Talks to the game server (PC_CONFIG.GAME_SERVER). Without a server the game runs alone in the browser
 // exactly as before: local boxes, XP only, no prizes.
@@ -1602,7 +1611,7 @@ const NET = {
     this.ws = ws;
     ws.onopen = () => {
       const p = this.profile, a = p.auth;
-      const hello = { t: "hello", skin: this.skinOf(p) };
+      const hello = { t: "hello", skin: this.skinOf(p), nick: p.nick || null };
       if (this.token) hello.token = this.token; else if (a) Object.assign(hello, { wallet: a.wallet, message: a.message, signature: a.signature });
       if (window.PC_DEMO) hello.dev = { canOpen: !!p.canOpen, tier: p.tier, name: p.name, trail: p.trail || null };
       ws.send(JSON.stringify(hello));
@@ -1638,6 +1647,7 @@ const NET = {
         this.up = true; this.retry = 0; this.token = m.token || this.token; this.wallet = m.wallet || this.wallet;
         Object.assign(state, { tier: TIERS[m.level] || TIERS.none, explorer: !m.canOpen, xp: m.xp, opened: m.opened, found: m.found });
         this.dayXp = m.dayXp || 0;
+        if (m.name) { state.nick = m.name; if (sc && sc.myTag) sc.myTag.setText(m.name); }
         this.online = m.online;
         if (m.err && this.profile.auth && !m.wallet) feed("Wallet check expired. Leave and connect again to open boxes.");
         if (first) { const f = this.onHi; this.onHi = null; f(m); }
@@ -1663,6 +1673,7 @@ const NET = {
       case "B": this.board = m.rows || []; this.online = m.online; updateHud(); break;
       case "me":
         if (m.level) state.tier = TIERS[m.level] || TIERS.none;
+        if (m.name) { state.nick = m.name; if (sc && sc.myTag) sc.myTag.setText(m.name); }
         if (m.canOpen !== undefined) state.explorer = !m.canOpen;
         updateHud(); break;
       case "pi": this.send({ t: "po", s: m.s }); break;
@@ -1927,7 +1938,7 @@ const PC = {
   },
   async play(profile) {
     await this.loadSprite(profile);
-    Object.assign(state, { char: profile.name, tex: profile.tex || "p_Explorer", tier: TIERS[profile.tier] || TIERS.none, explorer: !profile.canOpen, trail: profile.trail || null, xp: 0, opened: 0, found: 0 });
+    Object.assign(state, { nick: profile.nick || null, char: profile.name, tex: profile.tex || "p_Explorer", tier: TIERS[profile.tier] || TIERS.none, explorer: !profile.canOpen, trail: profile.trail || null, xp: 0, opened: 0, found: 0 });
     // join the multiplayer server when there is one; it decides level, box access and XP from here on
     feed("Connecting…");
     const hi = await NET.start(profile);
