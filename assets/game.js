@@ -1145,7 +1145,8 @@ class City extends Phaser.Scene {
     const m = this.m, cam = this.cameras.main;
     if (!this.textures.exists("chest")) { this.textures.addCanvas("chest", chestCanvas(false)); this.textures.addCanvas("chestOpen", chestCanvas(true)); this.textures.addCanvas("shadow", shadowCanvas()); }
     makeFxTextures(this);
-    this.chunks = new Map(); this.chunkQueue = [];
+    // the scene object is reused on restart, so forget which chunks were drawn last time
+    this.chunks = new Map(); this.chunkQueue = []; this.chunkSig = "";
     cam.setBounds(0, 0, m.W * T, m.H * T).setRoundPixels(true);
     this.fitZoom(); const onResize = () => { this.fitZoom(); this.chunkSig = ""; }; this.scale.on("resize", onResize);
     this.events.once("shutdown", () => { this.scale.off("resize", onResize); closeLock(); for (const k of this.chunks.keys()) this.textures.remove(k); this.chunks.clear(); });
