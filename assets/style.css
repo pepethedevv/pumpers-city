@@ -147,6 +147,9 @@ button { font: inherit; }
 .gwrap { display: grid; grid-template-columns: 220px minmax(0, 760px); gap: 40px; justify-content: center; padding: 32px 20px 80px; }
 .toc { position: sticky; top: 24px; align-self: start; display: flex; flex-direction: column; gap: 4px; }
 .toc .brand { margin-bottom: 12px; font-size: 10px; }
+.btn.back { font-size: 10px; padding: 12px 14px; margin-bottom: 14px; }
+.gend { display: flex; justify-content: center; padding: 8px 0 24px; }
+.gend .btn.back { font-size: 12px; padding: 16px 24px; }
 .toc a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 5px 8px; border-radius: 4px; }
 .toc a:hover { color: var(--fg); background: #1e1830; }
 .gbody { position: relative; }
@@ -181,6 +184,7 @@ details p { margin: 10px 0 0 !important; color: #d6cfe8; }
   .gwrap { grid-template-columns: 1fr; gap: 10px; padding-top: 56px; }
   .toc { position: static; flex-direction: row; flex-wrap: wrap; gap: 4px; }
   .toc .brand { width: 100%; }
+  .toc .btn.back { width: 100%; }
   .toc a { font-size: 13px; background: #1c1630; }
   .gbody table { font-size: 13px; }
   .gbody th, .gbody td { padding: 8px 6px; }

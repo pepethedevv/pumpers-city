@@ -21,10 +21,15 @@
   addEventListener("keydown", e => { if (e.key === "Escape") { document.querySelectorAll(".modal").forEach(m => m.hidden = true); closeGuide(); } });
 
   // ---------- guide ----------
-  function openGuide() { show("guide"); $("guide").scrollTop = 0; }
+  function openGuide() {
+    const playing = $("gate").hidden;
+    document.querySelectorAll("[data-close-guide]").forEach(b => b.textContent = playing ? "← BACK TO THE GAME" : "← BACK TO START");
+    show("guide"); $("guide").scrollTop = 0;
+  }
   function closeGuide() { show("guide", false); }
   document.querySelectorAll("[data-open-guide]").forEach(b => b.addEventListener("click", openGuide));
   $("guideClose").addEventListener("click", closeGuide);
+  document.querySelectorAll("[data-close-guide]").forEach(b => b.addEventListener("click", closeGuide));
   document.querySelectorAll(".toc a").forEach(a => a.addEventListener("click", e => { e.preventDefault(); document.querySelector(a.getAttribute("href")).scrollIntoView(); }));
 
   // ---------- entering the city ----------
