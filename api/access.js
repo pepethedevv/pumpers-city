@@ -3,10 +3,13 @@
 // 2) reads $PUMPERS balance and Pumpers NFTs through Helius
 // 3) returns the player's level and whether they can open boxes
 //
-// Environment variables (Vercel → Project → Settings → Environment Variables):
-//   HELIUS_API_KEY   your Helius key
-//   PUMPERS_MINT     $PUMPERS token address (leave empty until launch)
-//   NFT_COLLECTION   Pumpers NFT collection address (leave empty until mint)
+// HELIUS_API_KEY is secret: it lives only in Vercel → Settings → Environment Variables.
+// The token and collection addresses are public, so they are kept right here in the code.
+// Fill them in at launch (a Vercel environment variable with the same name still wins if set).
+export const ADDRESSES = {
+  PUMPERS_MINT: "",     // $PUMPERS token address (at token launch)
+  NFT_COLLECTION: "",   // Pumpers NFT collection address (after the mint)
+};
 import nacl from "tweetnacl";
 import bs58 from "bs58";
 
@@ -54,7 +57,7 @@ export default async function handler(req, res) {
   const err = verifyLogin(wallet, message, signature, host);
   if (err) return res.status(401).json({ error: err });
 
-  const mint = process.env.PUMPERS_MINT, coll = process.env.NFT_COLLECTION, key = process.env.HELIUS_API_KEY;
+  const mint = process.env.PUMPERS_MINT || ADDRESSES.PUMPERS_MINT, coll = process.env.NFT_COLLECTION || ADDRESSES.NFT_COLLECTION, key = process.env.HELIUS_API_KEY;
   if (!mint && !coll) return res.json({ live: false, wallet });
   if (!key) return res.status(500).json({ error: "server not configured" });
 

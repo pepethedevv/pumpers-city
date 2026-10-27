@@ -20,15 +20,18 @@ Your Pumper NFT is your character. Your $PUMPERS and NFT holdings decide your le
 
 Hosted on Vercel with no build step. Every push to `main` deploys.
 
-Environment variables (Vercel → Settings → Environment Variables):
+Only one secret lives in Vercel (Settings → Environment Variables): `HELIUS_API_KEY`, required for wallet checks.
 
-| Name | When |
-|---|---|
-| `HELIUS_API_KEY` | Required for wallet checks |
-| `NFT_COLLECTION` | After the NFT mint |
-| `PUMPERS_MINT` | At token launch |
+The public addresses are set in code:
 
-While `PUMPERS_MINT` and `NFT_COLLECTION` are empty, connected wallets are told the token and NFTs aren't live yet, and everyone explores as a guest.
+| Where | What | When |
+|---|---|---|
+| `api/access.js` → `ADDRESSES.NFT_COLLECTION` | Pumpers NFT collection | After the NFT mint |
+| `api/access.js` → `ADDRESSES.PUMPERS_MINT` | $PUMPERS token | At token launch |
+| `assets/config.js` → `MINT_URL` | Mint page link (shows the MINT button) | When minting opens |
+| `assets/config.js` → `CA` | Contract address shown on the landing page | At token launch |
+
+While the two addresses are empty, connected wallets are told the token and NFTs aren't live yet, and everyone explores as a guest.
 
 ## Testing
 
