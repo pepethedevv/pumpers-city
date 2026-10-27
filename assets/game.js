@@ -1224,8 +1224,11 @@ class City extends Phaser.Scene {
     updateHud();
   }
   fitZoom() {
-    const w = this.scale.width, h = this.scale.height;
-    this.cameras.main.setZoom(Phaser.Math.Clamp(Math.round(Math.min(w, h) / 400 * 4) / 4, 1.25, 3.5));
+    // same feel as before in screen points, but on high-density screens snap to a whole number of
+    // device pixels per map pixel, so every map pixel is drawn the same size and nothing shimmers
+    const d = window.PC_DPR || 1, w = this.scale.width / d, h = this.scale.height / d;
+    const z = Phaser.Math.Clamp(Math.round(Math.min(w, h) / 400 * 4) / 4, 1.25, 3.5);
+    this.cameras.main.setZoom(d >= 1.5 ? Math.max(1, Math.round(z * d)) : z);
   }
   // paint chunks around the camera; far ones are dropped to keep memory low
   updateChunks(force) {
@@ -1663,8 +1666,17 @@ const PC = {
   game: null,
   boot() {
     if (this.game) return;
+    // Draw at the screen's real pixel density (phones are 2-3x), then show it at normal size.
+    // Without this the phone stretches a small image and pixel art shimmers while the camera moves.
+    const fit = () => {
+      const d = Math.min(3, window.devicePixelRatio || 1); window.PC_DPR = d;
+      return { w: Math.round(window.innerWidth * d), h: Math.round(window.innerHeight * d), zoom: 1 / d };
+    };
+    const f = fit();
     this.game = window.pumpersGame = new Phaser.Game({ type: Phaser.AUTO, parent: "game", backgroundColor: "#120e1e", pixelArt: true, roundPixels: true,
-      scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight } });
+      scale: { mode: Phaser.Scale.NONE, width: f.w, height: f.h, zoom: f.zoom } });
+    let pending;
+    window.addEventListener("resize", () => { clearTimeout(pending); pending = setTimeout(() => { const n = fit(); this.game.scale.setZoom(n.zoom); this.game.scale.resize(n.w, n.h); }, 60); });
     this.game.scene.add("city", City, true, { attract: true });
   },
   // profile: { name, tex?, spriteUrl?, tier, canOpen, trail }
