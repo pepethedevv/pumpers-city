@@ -1,12 +1,24 @@
 // Landing gate, wallet connection, pass card and guide.
 (function () {
+  // these come from game.js; if it failed to load (blocked script, bad network) the page must still work
+  const $ = window.$ || (id => document.getElementById(id));
+  const esc = window.esc || (s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]));
+  const TIERS = window.TIERS || { none: { label: "No NFT", speed: 1, xp: 1, color: "#a99cc8" }, common: { label: "Common", speed: 1.05, xp: 1.2, color: "#d8d2e4" }, rare: { label: "Rare", speed: 1.1, xp: 1.4, color: "#5aaaff" }, epic: { label: "Epic", speed: 1.15, xp: 1.6, color: "#c07aff" }, legendary: { label: "Legendary", speed: 1.22, xp: 1.8, color: "#ffd667" }, oneofone: { label: "1/1", speed: 1.3, xp: 2, color: "#ff5aa0" } };
+  const gameOk = typeof window.PC !== "undefined";
   const cfg = window.PC_CONFIG || {};
   const show = (id, on = true) => { $(id).hidden = !on; };
   const fmt = n => Math.floor(n).toLocaleString("en-US");
   const short = a => a.slice(0, 4) + "…" + a.slice(-4);
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  // iPads say "Macintosh" but have a touch screen
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  const touch = isMobile || matchMedia("(pointer: coarse)").matches;
+  const rejected = e => e?.code === 4001 || /reject|cancel|denied|declin|closed/i.test(String(e?.message || e));
 
-  PC.boot();
+  if (gameOk) { try { PC.boot(); } catch (e) { console.error(e); } }
+  $("maphint").textContent = touch ? "TAP THE MAP TO ENLARGE" : "CLICK THE MAP OR PRESS M TO ENLARGE";
+  $("boardBtn").addEventListener("click", () => $("board").classList.toggle("open"));
+  $("board").addEventListener("click", () => $("board").classList.remove("open")); // tap the board to close it
+  if (window.PC_DEMO) show("demobar");
 
   // ---------- config on the page ----------
   if (cfg.X_URL) $("xlink").href = cfg.X_URL;
@@ -35,10 +47,11 @@
   // ---------- entering the city ----------
   function enter(profile) {
     document.querySelectorAll(".modal").forEach(m => m.hidden = true);
+    if (!gameOk) { show("bootfail"); return; }
     show("gate", false);
     PC.play(profile);
   }
-  $("leave").addEventListener("click", () => { PC.leave(); show("gate"); });
+  $("leave").addEventListener("click", () => { if (gameOk) PC.leave(); $("board").classList.remove("open"); show("gate"); });
 
   $("guest").addEventListener("click", () => {
     if (window.PC_DEMO) return openDemo();
@@ -102,6 +115,12 @@
       } else if (isMobile && w.deep) {
         const a = document.createElement("a"); a.className = "wbtn"; a.href = w.deep(location.href);
         a.innerHTML = `<span>Open in ${w.name}</span><small>app</small>`; list.append(a);
+      } else if (isMobile) {
+        // no reliable link into this app's browser: copy the address so it can be pasted there
+        const b = document.createElement("button"); b.type = "button"; b.className = "wbtn";
+        b.innerHTML = `<span>${w.name}</span><small>copy link</small>`;
+        b.addEventListener("click", () => { navigator.clipboard?.writeText(location.origin + "/").catch(() => {}); $("walletMsg").textContent = `Link copied. Open the ${w.name} app, go to its browser and paste it there.`; });
+        list.append(b);
       } else {
         const a = document.createElement("a"); a.className = "wbtn"; a.href = w.site; a.target = "_blank"; a.rel = "noopener";
         a.innerHTML = `<span>${w.name}</span><small>install</small>`; list.append(a);
@@ -123,19 +142,26 @@
       const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
       const sig = signed?.signature || signed;
       msg.textContent = "Checking your holdings…";
-      let data;
-      try {
-        const r = await fetch(cfg.API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallet: pk, message, signature: b64(new Uint8Array(sig)) }) });
-        data = await r.json();
-        if (!r.ok) throw new Error(data.error || "check failed");
-      } catch (e) {
-        data = { offline: true, wallet: pk };
+      let data, r = null;
+      try { r = await fetch(cfg.API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallet: pk, message, signature: b64(new Uint8Array(sig)) }) }); }
+      catch { data = { offline: true, wallet: pk }; } // no network: continue as explorer
+      if (r) {
+        data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          // say what actually went wrong instead of a generic "offline"
+          const err = String(data.error || "");
+          msg.textContent = /expired/.test(err) ? "The login signature was rejected as too old. Make sure your device's date and time are set automatically, then try again."
+            : /wrong site/.test(err) ? "This login was signed for a different site. Reload the page and try again."
+            : r.status >= 500 ? "We couldn't check your holdings right now. Please try again in a minute."
+            : "Login failed: " + (err || "please try again") + ".";
+          return;
+        }
       }
       show("walletModal", false);
       walletCtx = { pk, provider, name: w.name, auth: { wallet: pk, message, signature: b64(new Uint8Array(sig)) } };
       showPass(data, pk);
     } catch (e) {
-      msg.textContent = e?.message?.includes("User rejected") ? "Request was cancelled in the wallet." : "Couldn't connect: " + (e?.message || e);
+      msg.textContent = rejected(e) ? "Request was cancelled in the wallet." : "Couldn't connect: " + (e?.message || e);
     }
   }
 
@@ -143,7 +169,7 @@
   const RANK = { oneofone: 5, legendary: 4, epic: 3, rare: 2, common: 1 };
   let pass = null, chosen = null;
   let atlas = null;
-  const loadAtlas = () => atlas || (atlas = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = "sprites/atlas.png"; }));
+  const loadAtlas = () => atlas || (atlas = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = "static/atlas.8be1ec70f1.png"; }));
   // draw a Pumper exactly as it looks in the game (64 per row, 32x32 in the atlas)
   async function thumb(n, canvas) {
     const x = canvas.getContext("2d"); x.imageSmoothingEnabled = false;
@@ -255,7 +281,7 @@
       if (j.status) { p.status = j.status; p.signature = j.signature; if (j.status === "sending") setTimeout(refreshPrizes, 8000); }
       else p.err = j.error || "Claim failed. Please try again.";
     } catch (e) {
-      p.err = /reject|cancel/i.test(String(e?.message)) ? "Cancelled in the wallet." : "Claim failed. Please try again.";
+      p.err = rejected(e) ? "Cancelled in the wallet." : "Claim failed. Please try again.";
     }
     renderPrizes();
   }

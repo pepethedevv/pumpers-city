@@ -69,8 +69,11 @@ canvas { image-rendering: pixelated; }
 .chars button:hover, .chars button:focus-visible { border-color: var(--gold); outline: none; }
 .chars img { width: 72px; height: 72px; image-rendering: pixelated; }
 .chars small { color: var(--muted); font-weight: 400; font-size: 11px; }
+.boardbtn { display: none; }
 @media (max-width: 640px) {
   #board { display: none; }
+  #board.open { display: block; right: 10px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); z-index: 6; pointer-events: auto; }
+  .boardbtn { display: inline-block; }
   #minimap { width: 100px; }
   #stats { min-width: 150px; font-size: 8px; }
   #banner { font-size: 14px; }
@@ -227,3 +230,8 @@ details p { margin: 10px 0 0 !important; color: #d6cfe8; }
 .nameinput:focus { border-color: var(--gold); }
 .namemsg { min-height: 18px; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
 .namemsg.err { color: #ff8a8a; }
+
+.bootfail { color: #ff8a8a; }
+/* test mode banner: nothing in ?demo=1 is real */
+#demobar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; padding: 6px 8px; text-align: center; font: 9px var(--pixel); color: #1a1408; background: repeating-linear-gradient(45deg, #ffd667 0 14px, #f0b840 14px 28px); pointer-events: none; }
+.wincard.demo .h::before { content: "DEMO · "; }

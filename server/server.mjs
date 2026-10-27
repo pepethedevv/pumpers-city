@@ -189,6 +189,8 @@ function checkToken(tok) {
   const want = crypto.createHmac("sha256", SECRET).update(wallet + "." + exp).digest("hex").slice(0, 32);
   return mac.length === want.length && crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(want)) ? wallet : null;
 }
+const usedSigs = new Map(); // signature → forget after
+setInterval(() => { const now = Date.now(); for (const [k, t] of usedSigs) if (t < now) usedSigs.delete(k); }, 60_000);
 const holdCache = new Map(); // wallet → { at, h }
 async function getHoldings(wallet, fresh) {
   const c = holdCache.get(wallet);
@@ -220,8 +222,9 @@ async function hello(p, msg) {
   if (msg.token) { wallet = checkToken(msg.token); err = wallet ? null : "session expired"; }
   else if (msg.wallet) {
     const lines = String(msg.message || "").split("\n"), site = (lines.find(l => l.startsWith("Site: ")) || "").slice(6).replace(/^www\./, "");
-    err = verifySigned("login", msg.wallet, msg.message, msg.signature, null) || (!DEV && !SITES.includes(site) ? "wrong site" : null);
-    if (!err) wallet = msg.wallet;
+    err = verifySigned("login", msg.wallet, msg.message, msg.signature, null) || (!DEV && !SITES.includes(site) ? "wrong site" : null)
+      || (usedSigs.has(msg.signature) ? "login already used" : null);
+    if (!err) { wallet = msg.wallet; usedSigs.set(msg.signature, Date.now() + 11 * 60_000); } // a login signature works once (it expires after 10 min anyway)
   }
   if (wallet) {
     const old = byWallet.get(wallet);

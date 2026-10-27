@@ -11,19 +11,23 @@
 <meta property="og:url" content="https://www.pumperscity.com/">
 <meta property="og:image" content="https://www.pumperscity.com/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#120e1e">
 <meta name="twitter:site" content="@pumperscity">
 <meta name="twitter:title" content="Pumpers City">
 <meta name="twitter:description" content="Explore the city. Crack the boxes. Some hold real $PUMP.">
 <meta name="twitter:image" content="https://www.pumperscity.com/assets/og.png">
 <link rel="canonical" href="https://www.pumperscity.com/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='4' y='1' width='8' height='14' rx='4' fill='%23ffd667' stroke='%23120e1e'/%3E%3Crect x='6' y='6' width='1' height='1' fill='%23120e1e'/%3E%3Crect x='9' y='6' width='1' height='1' fill='%23120e1e'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Sans:wght@400;600&display=swap">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="static/style.bdd55f9239.css">
 </head>
 <body>
 <div id="game"></div>
+<div id="demobar" hidden>DEMO MODE · NOTHING HERE IS REAL · NO PRIZES ARE PAID</div>
 
 <!-- ============ IN-GAME HUD ============ -->
 <div class="hud panel" id="stats" hidden>
@@ -33,7 +37,7 @@
   <div>BOXES <b id="opened">0</b></div>
   <div>FOUND <b id="found">0</b> PUMP</div>
 </div>
-<div class="hud" id="mapbox" hidden><div class="panel" id="district">DOWNTOWN</div><canvas id="minimap"></canvas><div class="hint">TAP MAP OR PRESS M TO ENLARGE</div></div>
+<div class="hud" id="mapbox" hidden><div class="panel" id="district">DOWNTOWN</div><canvas id="minimap"></canvas><div class="hint" id="maphint">TAP MAP OR PRESS M TO ENLARGE</div></div>
 <div id="bigmap" hidden><canvas id="bigcanvas"></canvas><div>WHITE = YOU · PURPLE = BLACK HOLES · TAP TO CLOSE</div></div>
 <div class="hud panel" id="board" hidden>
   <h3>DAILY LEADERBOARD</h3>
@@ -45,7 +49,7 @@
 <div class="hud" id="toast"></div>
 <div class="hud" id="banner"></div>
 <div class="hud" id="help" hidden></div>
-<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide>HOW TO PLAY</button><button type="button" class="chip gold" id="prizesBtn" hidden>MY PRIZES <i id="prizeDot" hidden></i></button><button type="button" class="chip" id="switch" hidden>SWITCH PUMPER</button><button type="button" class="chip" id="leave">LEAVE</button></div>
+<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide>HOW TO PLAY</button><button type="button" class="chip gold" id="prizesBtn" hidden>MY PRIZES <i id="prizeDot" hidden></i></button><button type="button" class="chip boardbtn" id="boardBtn">🏆 BOARD</button><button type="button" class="chip" id="switch" hidden>SWITCH PUMPER</button><button type="button" class="chip" id="leave">LEAVE</button></div>
 <div class="hud panel" id="lock" hidden>
   <div class="t">PICK THE LOCK</div>
   <div class="lockbar"><i id="zone"></i><b id="needle"></b></div>
@@ -70,7 +74,8 @@
       <button type="button" class="btn ghost" id="guest">PLAY AS GUEST</button>
       <a class="btn mint" id="mintBtn" href="#" target="_blank" rel="noopener" hidden>MINT A PUMPER · 0.02 SOL</a>
     </div>
-    <p class="small">Guests can explore every district. Holders can open boxes.</p>
+    <p class="small">Guests can explore every district. Hold <b>$PUMPERS</b> (our token) or a Pumpers NFT to open boxes.<br>Prizes are paid in <b>$PUMP</b>.</p>
+    <p class="small bootfail" id="bootfail" hidden>The game couldn't load. Please refresh the page or try another browser.</p>
     <div class="chips" id="facts">
       <span>7 DISTRICTS</span><span>REAL $PUMP PRIZES</span><span>3,333 NFTS</span>
     </div>
@@ -327,9 +332,9 @@
   </div>
 </div>
 
-<script src="assets/config.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
-<script src="assets/game.js"></script>
-<script src="assets/site.js"></script>
+<script src="static/config.f3eae49c71.js"></script>
+<script src="static/phaser.min.62081f6a1b.js"></script>
+<script src="static/game.efdee4e799.js"></script>
+<script src="static/site.b610af2ca6.js"></script>
 </body>
 </html>

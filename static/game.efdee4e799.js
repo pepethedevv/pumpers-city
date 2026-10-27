@@ -1196,7 +1196,10 @@ class City extends Phaser.Scene {
     if (!this.live) for (let i = 0; i < 120; i++) this.spawnBox(r);
 
     // input
-    this.keys = this.input.keyboard.addKeys("W,A,S,D,UP,DOWN,LEFT,RIGHT,E,SPACE,ESC");
+    // no global key capture: Space / arrows must still work on buttons and in the guide (see keyGuard in core.js)
+    this.input.keyboard.disableGlobalCapture();
+    this.keys = this.input.keyboard.addKeys("W,A,S,D,UP,DOWN,LEFT,RIGHT,E,SPACE,ESC", false);
+    this.uiWasOpen = false;
     const act = () => { if (this.attract) return; lockState ? lockHit() : this.tryOpen(); };
     this.input.keyboard.on("keydown-E", act);
     this.input.keyboard.on("keydown-SPACE", act);
@@ -1476,6 +1479,12 @@ class City extends Phaser.Scene {
     if (this.leaving) return;
     this.updateChunks(false);
     if (this.attract) { this.tourStep(dt); this.npcStep(time, dt); this.ringStep(time); return; }
+    // the guide or a window is open over the game: the game ignores the keyboard and stops walking
+    const ui = uiOpen();
+    if (ui !== this.uiWasOpen) {
+      this.uiWasOpen = ui; this.input.keyboard.enabled = !ui; this.input.keyboard.resetKeys();
+      if (ui) { this.moveTarget = null; this.hold = null; if (lockState && !lockState.waiting) { closeLock(); if (this.live) NET.send({ t: "c" }); } }
+    }
     const k = this.keys, sp = 0.11 * state.tier.speed * dt;
     let vx = (k.D.isDown || k.RIGHT.isDown) - (k.A.isDown || k.LEFT.isDown), vy = (k.S.isDown || k.DOWN.isDown) - (k.W.isDown || k.UP.isDown);
     if (lockState && !lockState.waiting && (vx || vy || this.moveTarget)) { closeLock("You moved away. Stand still to pick the lock."); if (this.live) NET.send({ t: "c" }); }
@@ -1586,7 +1595,8 @@ const NET = {
   last: null, lastT: 0, retry: 0, stopped: true, onHi: null,
   url() {
     const q = new URLSearchParams(location.search).get("server");
-    return q || (window.PC_CONFIG || {}).GAME_SERVER || "";
+    // test mode (?demo=1) stays offline unless a server is named in the address
+    return q || (window.PC_DEMO ? "" : (window.PC_CONFIG || {}).GAME_SERVER || "");
   },
   skinOf(profile) {
     if (profile.tex && profile.tex.startsWith("o_")) return { o: profile.tex.slice(2) };
@@ -1598,7 +1608,10 @@ const NET = {
     this.stop();
     const url = this.url();
     if (!url) return Promise.resolve(null);
-    this.profile = profile; this.stopped = false; this.token = null; this.wallet = null; this.retry = 0;
+    // a login signature is accepted once; entering again (after LEAVE) uses the session the server gave us
+    this.tokens = this.tokens || {};
+    const w = profile.auth && profile.auth.wallet;
+    this.profile = profile; this.stopped = false; this.token = (w && this.tokens[w]) || null; this.wallet = null; this.retry = 0;
     return new Promise(res => {
       const timer = setTimeout(() => { this.onHi = null; if (!this.up) { this.stop(); res(null); } }, 5000);
       this.onHi = hi => { clearTimeout(timer); res(hi); };
@@ -1645,6 +1658,7 @@ const NET = {
       case "hi": {
         const first = !this.up && this.onHi;
         this.up = true; this.retry = 0; this.token = m.token || this.token; this.wallet = m.wallet || this.wallet;
+        if (m.wallet && m.token) this.tokens[m.wallet] = m.token;
         Object.assign(state, { tier: TIERS[m.level] || TIERS.none, explorer: !m.canOpen, xp: m.xp, opened: m.opened, found: m.found });
         this.dayXp = m.dayXp || 0; if (m.resetHour !== undefined) this.resetHour = m.resetHour;
         if (m.name) { state.nick = m.name; if (sc && sc.myTag) sc.myTag.setText(m.name); }
@@ -1884,7 +1898,7 @@ const WIN_MINE = (a) => `You cracked it! <span class="amt">${a}</span> $PUMP is 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 function announceWin(name, amount, where, mine) {
   const a = amount.toLocaleString("en-US"), d = document.createElement("div");
-  d.className = "wincard" + (mine ? " mine" : "");
+  d.className = "wincard" + (mine ? " mine" : "") + (window.PC_DEMO ? " demo" : "");
   d.innerHTML = `<canvas class="ico" width="16" height="16"></canvas><div class="h">${pick(WIN_HEAD)}</div>
     <div class="m">${mine ? WIN_MINE(a) : pick(WIN_LINE)(esc(name), a)}</div><div class="w">in ${esc(where)}</div>`;
   d.querySelector("canvas").getContext("2d").drawImage(chestCanvas(true), 0, 0);
@@ -1896,6 +1910,19 @@ function announceWin(name, amount, where, mine) {
 // prize cards sit right under the stats panel and stay up for 5 minutes
 function placeWins() { const s = $("stats"); if (!s.hidden) $("wins").style.top = Math.round(s.getBoundingClientRect().bottom + 8) + "px"; }
 window.addEventListener("resize", placeWins);
+// is a window (guide, modal, landing gate) open over the game?
+function uiOpen() {
+  if (!$("gate").hidden || ($("guide") && !$("guide").hidden)) return true;
+  for (const m of document.querySelectorAll(".modal")) if (!m.hidden) return true;
+  return false;
+}
+// while playing, Space and the arrow keys belong to the game (stop the page from scrolling or pressing a
+// focused button); in the guide, windows, forms and on the landing gate they work as usual
+window.addEventListener("keydown", e => {
+  if (!["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code) || uiOpen()) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  if (PC.game && PC.game.scene.getScene("city")?.attract === false) e.preventDefault();
+});
 // large map overlay
 function toggleBigMap(force) {
   const bm = $("bigmap"), show = force ?? bm.hidden;
@@ -1934,7 +1961,7 @@ const PC = {
     if (!profile.spriteNum) return;
     const n = profile.spriteNum, key = "nft_" + n;
     if (!this.game.textures.exists(key)) {
-      this.atlas = this.atlas || await new Promise(res => { const img = new Image(); img.onload = () => res(img); img.onerror = () => res(null); img.src = "sprites/atlas.png"; });
+      this.atlas = this.atlas || await new Promise(res => { const img = new Image(); img.onload = () => res(img); img.onerror = () => res(null); img.src = "static/atlas.8be1ec70f1.png"; });
       if (this.atlas) { const c = document.createElement("canvas"); c.width = c.height = 32; c.getContext("2d").drawImage(this.atlas, ((n - 1) % 64) * 32, Math.floor((n - 1) / 64) * 32, 32, 32, 0, 0, 32, 32); this.game.textures.addCanvas(key, c); }
     }
     if (this.game.textures.exists(key)) profile.tex = key;
@@ -1946,13 +1973,19 @@ const PC = {
     feed("Connecting…");
     const hi = await NET.start(profile);
     NET.live = !!hi;
+    // there is a game server but it can't be reached: look around only, so no XP is collected that can't be saved
+    const serverDown = !hi && !!NET.url();
+    if (serverDown) state.explorer = true;
     ["stats", "mapbox", "board", "help", "ingame"].forEach(id => $(id).hidden = false);
-    $("help").textContent = "WASD / arrows, or hold / drag to move · stand by a box and press E · M opens the map · walk into a black hole to travel";
+    $("help").textContent = matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: fine)").matches
+      ? "Hold or drag to walk · tap a box to open it · tap the map to enlarge · walk into a black hole to travel"
+      : "WASD / arrows, or hold / drag to move · stand by a box and press E · M opens the map · walk into a black hole to travel";
     if (NET.live) boardTag(); else $("board").querySelector(".tag").textContent = BOARD.length ? "Daily · top 3 win $PUMP · demo names" : "Daily · top 3 win $PUMP · live at launch";
     this.game.scene.getScene("city").scene.restart({ map: "downtown" });
     updateHud(); setTimeout(placeWins, 50);
     if (hi) for (const w of (hi.wins || []).slice().reverse()) announceWin(w.who, w.amount, w.district, false);
-    setTimeout(() => feed(state.explorer ? "Explorer mode: look around freely. Holders can open boxes." : "Welcome to Pumpers City. Boxes glow gold."), 800);
+    if (serverDown) setTimeout(() => feed("Can't reach the game server right now. You can look around; boxes are locked. Leave and enter again in a minute."), 900);
+    else setTimeout(() => feed(state.explorer ? "Explorer mode: look around freely. Holders can open boxes." : "Welcome to Pumpers City. Boxes glow gold."), 800);
     if (window.PC_DEMO && !NET.live && !this.demoWins) { this.demoWins = true; const demoWin = () => { announceWin(pick(DEMO_NAMES), PRIZE, pick(["DOWNTOWN", "VOLCANO ISLAND", "HARBOR"])); setTimeout(demoWin, 40000 + Math.random() * 50000); }; setTimeout(demoWin, 9000); }
   },
   // swap the player's look (and trail) in place; level and box access stay the same

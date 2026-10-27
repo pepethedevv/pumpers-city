@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lost in the city · Pumpers City</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#120e1e">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+  :root { --bg: #120e1e; --fg: #f2ecff; --muted: #a99cc8; --gold: #ffd667; --line: #6e5aa0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 16px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+  body { display: grid; place-items: center; padding: 16px;
+    background-image: linear-gradient(rgba(110, 90, 160, .12) 1px, transparent 1px), linear-gradient(90deg, rgba(110, 90, 160, .12) 1px, transparent 1px); background-size: 32px 32px; }
+  main { width: min(460px, 100%); text-align: center; padding: 32px 20px; background: #18122a; border: 2px solid var(--line); border-radius: 10px; }
+  .hole { width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 50%; background: #000; box-shadow: 0 0 0 6px #6a3acc55, 0 0 0 14px #8a4aff22, 0 0 40px #b07aff88; animation: spin 2.4s ease-in-out infinite alternate; }
+  @keyframes spin { to { box-shadow: 0 0 0 10px #6a3acc55, 0 0 0 20px #8a4aff22, 0 0 60px #b07aff; } }
+  h1 { margin: 0 0 12px; font: 18px/1.4 "Press Start 2P", monospace; color: var(--gold); }
+  p { margin: 0 0 22px; color: var(--muted); }
+  a { display: inline-block; padding: 14px 18px; font: 10px "Press Start 2P", monospace; color: #1a1408; background: var(--gold); border-radius: 6px; text-decoration: none; box-shadow: 0 4px 0 #a07a20; }
+  a:active { transform: translateY(2px); box-shadow: 0 2px 0 #a07a20; }
+</style>
+</head>
+<body>
+<main>
+  <div class="hole" aria-hidden="true"></div>
+  <h1>404 · LOST IN<br>THE CITY</h1>
+  <p>This black hole leads nowhere. The page you're looking for doesn't exist.</p>
+  <a href="/">BACK TO PUMPERS CITY</a>
+</main>
+</body>
+</html>

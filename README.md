@@ -9,12 +9,13 @@ Your Pumper NFT is your character. Your $PUMPERS and NFT holdings decide your le
 | Path | What it is |
 |---|---|
 | `index.html` | The site: landing gate over the live city, the game HUD, and the "How it works" guide |
-| `assets/game.js` | The game client (Phaser 3): seven districts, boxes, lock-picking, trails |
-| `assets/site.js` | Landing gate, wallet connection (Phantom, Solflare, Backpack), Pumper picker |
-| `assets/style.css` | Styles |
-| `assets/config.js` | Public settings: contract address, mint link, X link |
+| `static/game.<hash>.js` | The game client (Phaser 3, served from `static/` with the other code files; names carry a content hash so they can be cached for a year) |
+| `static/site.<hash>.js` | Landing gate, wallet connection (Phantom, Solflare, Backpack), name picker, Pumper picker, MY PRIZES |
+| `static/style.<hash>.css`, `static/phaser.min.<hash>.js` | Styles, and Phaser served from our own domain |
+| `static/config.<hash>.js` | Public settings: contract address, mint link, X link, game server (edit `site-src/assets/config.js` and rebuild) |
 | `api/access.js` | Serverless function: verifies the wallet's signed login and reads $PUMPERS and NFT holdings through Helius |
-| `sprites/atlas.png` | In-game sprites of every Pumper (64 per row, 32×32) |
+| `static/atlas.<hash>.png` | In-game sprites of every Pumper (64 per row, 32×32) |
+| `robots.txt`, `sitemap.xml`, `404.html`, icons | Search engines, not-found page, home-screen icon |
 | `api/prizes.js` | Lists a wallet's prizes (and settles any payout still in flight) |
 | `api/claim.js` | Claims one prize: verifies the signed claim, re-checks holdings, locks the prize, sends $PUMP from the prize wallet |
 | `api/_lib.js` | Shared code: public addresses, access rules, signature checks, Helius and Supabase helpers |
