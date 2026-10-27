@@ -52,6 +52,7 @@
     $("chars").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
       const c = CHARS.find(c => c.k === b.dataset.k);
       enter({ name: c.k, tex: c.tex, tier: c.tier, canOpen: !c.explorer, trail: c.trail || null });
+      show("prizesBtn");
     }));
     show("demoModal");
   }
@@ -82,6 +83,7 @@
     show("walletModal");
   });
 
+  let walletCtx = null;
   const b64 = bytes => btoa(String.fromCharCode(...bytes));
   async function connectWith(w, provider) {
     const msg = $("walletMsg");
@@ -103,6 +105,7 @@
         data = { offline: true, wallet: pk };
       }
       show("walletModal", false);
+      walletCtx = { pk, provider, name: w.name };
       showPass(data, pk);
     } catch (e) {
       msg.textContent = e?.message?.includes("User rejected") ? "Request was cancelled in the wallet." : "Couldn't connect: " + (e?.message || e);
@@ -167,7 +170,7 @@
     renderPicker(d.nfts || []);
     $("accessTitle").textContent = "YOUR PASS";
     $("enter").textContent = "ENTER THE CITY";
-    $("enter").onclick = () => { enter(profileFor(chosen)); $("switch").hidden = !((d.nfts || []).length > 1); };
+    $("enter").onclick = () => { enter(profileFor(chosen)); $("switch").hidden = !((d.nfts || []).length > 1); show("prizesBtn"); refreshPrizes(); };
     show("accessModal");
   }
   // switch Pumper while playing
@@ -180,5 +183,60 @@
     $("enter").onclick = () => { show("accessModal", false); PC.setCharacter(profileFor(chosen)); };
     show("accessModal");
   });
-  $("leave").addEventListener("click", () => { $("switch").hidden = true; });
+  $("leave").addEventListener("click", () => { $("switch").hidden = true; show("prizesBtn", false); });
+
+  // ---------- MY PRIZES ----------
+  let prizes = [], demoN = 0;
+  const demoMode = () => !!window.PC_DEMO && !walletCtx;
+  const fmtDate = s => new Date(s).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  async function refreshPrizes() {
+    if (demoMode()) return renderPrizes();
+    if (!walletCtx) return;
+    try {
+      const r = await fetch(`/api/prizes?wallet=${walletCtx.pk}`); const j = await r.json();
+      if (r.ok) prizes = j.prizes || [];
+    } catch {}
+    renderPrizes();
+  }
+  function renderPrizes() {
+    $("prizeDot").hidden = !prizes.some(p => p.status === "ready");
+    $("prizesWallet").textContent = walletCtx ? "Wallet " + short(walletCtx.pk) : "Test mode: prizes here are not real.";
+    const list = $("prizesList");
+    if (!prizes.length) { list.innerHTML = `<div class="pempty">No prizes yet. Every box could be the one.</div>`; return; }
+    list.innerHTML = prizes.map((p, i) => {
+      const amt = Number(p.amount).toLocaleString("en-US");
+      let act;
+      if (p.status === "ready") act = `<button type="button" class="btn gold" data-claim="${i}">CLAIM</button>`;
+      else if (p.status === "sending") act = `<span class="st wait">SENDING…</span>`;
+      else if (p.status === "sent") act = `<span class="st sent">SENT ✓</span>${p.signature && !String(p.signature).startsWith("demo") ? `<br><a href="https://solscan.io/tx/${encodeURIComponent(p.signature)}" target="_blank" rel="noopener">View on Solscan</a>` : ""}`;
+      else act = `<span class="st held">UNDER REVIEW</span>`;
+      return `<div class="prow ${p.status}"><span class="amt">${amt} $PUMP</span><div class="act">${act}</div>
+        <span class="meta">${esc(p.district || "")} · ${fmtDate(p.created_at)}</span>${p.err ? `<span class="perr">${esc(p.err)}</span>` : ""}</div>`;
+    }).join("");
+    list.querySelectorAll("[data-claim]").forEach(b => b.addEventListener("click", () => claim(prizes[+b.dataset.claim], b)));
+  }
+  async function claim(p, btn) {
+    btn.disabled = true; btn.textContent = "SIGN…"; p.err = null;
+    if (demoMode()) { p.status = "sending"; renderPrizes(); setTimeout(() => { p.status = "sent"; p.signature = "demo"; renderPrizes(); }, 1500); return; }
+    try {
+      const message = `Pumpers City claim\nWallet: ${walletCtx.pk}\nPrize: ${p.id}\nSite: ${location.host}\nTime: ${new Date().toISOString()}\n\nThis signature only confirms you are claiming this prize. It is free and moves no funds.`;
+      const signed = await walletCtx.provider.signMessage(new TextEncoder().encode(message), "utf8");
+      btn.textContent = "SENDING…";
+      const r = await fetch("/api/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallet: walletCtx.pk, prizeId: p.id, message, signature: b64(new Uint8Array(signed?.signature || signed)) }) });
+      const j = await r.json().catch(() => ({}));
+      if (j.status) { p.status = j.status; p.signature = j.signature; if (j.status === "sending") setTimeout(refreshPrizes, 8000); }
+      else p.err = j.error || "Claim failed. Please try again.";
+    } catch (e) {
+      p.err = /reject|cancel/i.test(String(e?.message)) ? "Cancelled in the wallet." : "Claim failed. Please try again.";
+    }
+    renderPrizes();
+  }
+  $("prizesBtn").addEventListener("click", () => { renderPrizes(); show("prizesModal"); refreshPrizes(); });
+  // a prize found in this session (test mode) shows up right away
+  window.addEventListener("pc:prize", e => {
+    if (!demoMode()) { setTimeout(refreshPrizes, 3000); return; }
+    prizes.unshift({ id: "demo" + (++demoN), amount: e.detail.amount, district: e.detail.district, status: "ready", created_at: new Date().toISOString() });
+    renderPrizes();
+  });
+  setInterval(() => { if (!$("prizesBtn").hidden) refreshPrizes(); }, 60000);
 })();

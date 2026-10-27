@@ -1,6 +1,19 @@
 {
   "cleanUrls": true,
   "headers": [
-    { "source": "/assets/(.*)", "headers": [{ "key": "cache-control", "value": "public, max-age=300" }] }
-  ]
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "cache-control",
+          "value": "public, max-age=300"
+        }
+      ]
+    }
+  ],
+  "functions": {
+    "api/claim.js": {
+      "maxDuration": 30
+    }
+  }
 }

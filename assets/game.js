@@ -1332,7 +1332,8 @@ class City extends Phaser.Scene {
   finishOpen(box) {
     box.done = true;
     // Real game: the server decides the result now and checks the lock timing. The browser never knows which box holds a prize.
-    const win = state.pool > 0 && Math.random() < 0.05;
+    // Only test mode rolls prizes in the browser. On the live site prizes come from the server, never from here.
+    const win = !!window.PC_DEMO && state.pool > 0 && Math.random() < 0.05;
     const xp = Math.round(rollXp() * state.tier.xp);
     this.tweens.killTweensOf(box.s); box.s.setTexture("chestOpen");
     this.tweens.add({ targets: box.s, scaleX: 1.3, scaleY: 1.3, yoyo: true, duration: 140 });
@@ -1342,6 +1343,8 @@ class City extends Phaser.Scene {
       this.burst(box.x, box.y - 8, 0xffd25a, 30); this.cameras.main.shake(220, 0.004);
       toast("+" + PRIZE.toLocaleString("en-US") + " PUMP!", "#ffd667");
       announceWin("You", PRIZE, this.m.name, true);
+      // the site adds it to MY PRIZES (in the real game the server records the prize)
+      window.dispatchEvent(new CustomEvent("pc:prize", { detail: { amount: PRIZE, district: this.m.name } }));
     } else this.burst(box.x, box.y - 8, 0x7fd8ff, 12);
     this.floatText(box.x, box.y - 18, "+" + xp + " XP" + (state.tier.xp > 1 ? " (x" + state.tier.xp + ")" : ""), "#7fd8ff");
     updateHud();
@@ -1631,7 +1634,7 @@ const WIN_LINE = [
   (n, a) => `<b>${n}</b> found <span class="amt">${a}</span> $PUMP inside!`,
   (n, a) => `<span class="amt">${a}</span> $PUMP goes to <b>${n}</b>`,
 ];
-const WIN_MINE = (a) => `You cracked it! <span class="amt">${a}</span> $PUMP is yours`;
+const WIN_MINE = (a) => `You cracked it! <span class="amt">${a}</span> $PUMP is yours. Claim it in MY PRIZES`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 function announceWin(name, amount, where, mine) {
   const a = amount.toLocaleString("en-US"), d = document.createElement("div");

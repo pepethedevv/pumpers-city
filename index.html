@@ -45,7 +45,7 @@
 <div class="hud" id="toast"></div>
 <div class="hud" id="banner"></div>
 <div class="hud" id="help" hidden></div>
-<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide>HOW TO PLAY</button><button type="button" class="chip" id="switch" hidden>SWITCH PUMPER</button><button type="button" class="chip" id="leave">LEAVE</button></div>
+<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide>HOW TO PLAY</button><button type="button" class="chip gold" id="prizesBtn" hidden>MY PRIZES <i id="prizeDot" hidden></i></button><button type="button" class="chip" id="switch" hidden>SWITCH PUMPER</button><button type="button" class="chip" id="leave">LEAVE</button></div>
 <div class="hud panel" id="lock" hidden>
   <div class="t">PICK THE LOCK</div>
   <div class="lockbar"><i id="zone"></i><b id="needle"></b></div>
@@ -98,6 +98,17 @@
     <div id="accessBody"></div>
     <div id="nftPick" class="nftpick"></div>
     <button type="button" class="btn gold wide" id="enter">ENTER THE CITY</button>
+  </div>
+</div>
+
+<!-- ============ MY PRIZES ============ -->
+<div class="modal" id="prizesModal" hidden>
+  <div class="sheet">
+    <button type="button" class="close" data-close aria-label="Close">×</button>
+    <h2>MY PRIZES</h2>
+    <p class="muted" id="prizesWallet"></p>
+    <div id="prizesList" class="plist"></div>
+    <p class="muted small">Press CLAIM and sign a free message in your wallet. We check your holdings again, then the $PUMP is sent to this wallet within seconds.</p>
   </div>
 </div>
 
@@ -166,7 +177,7 @@
         </ol>
         <div class="cards">
           <div class="card"><h4>XP IN EVERY BOX</h4><p>Every box gives XP, between 5 and 25 before your multiplier. Higher rolls are rarer.</p></div>
-          <div class="card gold"><h4>REAL $PUMP</h4><p>Some boxes hold a $PUMP prize, sent to the wallet you played with. You only find out when you open one.</p></div>
+          <div class="card gold"><h4>REAL $PUMP</h4><p>Some boxes hold a $PUMP prize. You only find out when you open one. Claim it from MY PRIZES and it goes straight to your wallet.</p></div>
           <div class="card"><h4>RELEASED IN BATCHES</h4><p>Prize boxes go live a few at a time. When a batch is found, the next one goes live somewhere in the city.</p></div>
           <div class="card"><h4>EVERYONE SEES IT</h4><p>When someone opens a prize, every player sees it on screen.</p></div>
         </div>
@@ -260,7 +271,7 @@
         <ul>
           <li>Movement and box opening are checked by our server. Teleporting, speed hacks and auto-openers don't work.</li>
           <li>Each wallet has limits on how many boxes it can open, so bots and multi-wallets gain nothing.</li>
-          <li>Holdings are checked when you connect and again before a prize is paid.</li>
+          <li>Holdings are checked when you connect and again when you claim a prize.</li>
           <li>Suspicious wins can be held for review before payout.</li>
         </ul>
       </section>
@@ -273,7 +284,7 @@
         <details><summary>I bought tokens. Why can't I open boxes yet?</summary><p>Reconnect your wallet so your holdings are checked again, and make sure the tokens are in the wallet you connected.</p></details>
         <details><summary>I own several Pumpers. Which one do I play as?</summary><p>You choose. After connecting, pick any Pumper you own, and switch any time in the game with SWITCH PUMPER. Your level and perks always come from your best one.</p></details>
         <details><summary>Does it work on phones?</summary><p>Yes. Hold or drag to walk, tap a box to open it, and tap the minimap for the big map.</p></details>
-        <details><summary>How do I get my prize?</summary><p>Prizes are sent to the wallet you played with.</p></details>
+        <details><summary>How do I claim my prize?</summary><p>Open MY PRIZES at the top of the screen while playing and press CLAIM. You sign a free message in your wallet, we check your holdings again, and the $PUMP is sent to the wallet you played with within seconds. Unclaimed prizes wait for you, so you can claim them any time.</p></details>
       </section>
       <div class="gend"><button type="button" class="btn gold back" data-close-guide>BACK TO THE GAME</button></div>
     </article>

@@ -82,6 +82,21 @@ button { font: inherit; }
 #ingame { left: 50%; top: calc(10px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: flex; gap: 6px; pointer-events: auto; }
 .chip { font: 8px var(--pixel); padding: 7px 9px; background: var(--panel); color: var(--fg); border: 2px solid var(--line); border-radius: 4px; cursor: pointer; }
 .chip:hover { border-color: var(--gold); color: var(--gold); }
+.chip.gold { border-color: #8a6a20; color: var(--gold); position: relative; }
+.chip.gold i { position: absolute; top: -4px; right: -4px; width: 9px; height: 9px; border-radius: 50%; background: var(--hot); box-shadow: 0 0 0 2px #120e1e; }
+.chip i[hidden] { display: none; }
+.plist { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto; }
+.prow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 12px; padding: 12px; background: #221a38; border: 2px solid var(--line); border-radius: 6px; }
+.prow.ready { border-color: #8a6a20; background: #2a2010; }
+.prow .amt { font: 12px var(--pixel); color: var(--gold); }
+.prow .meta { grid-column: 1; font-size: 12px; color: var(--muted); }
+.prow .act { grid-row: 1 / span 2; grid-column: 2; text-align: right; }
+.prow .act .btn { font-size: 9px; padding: 10px 12px; }
+.prow .st { font: 8px var(--pixel); }
+.prow .st.sent { color: #7be08a; } .prow .st.wait { color: var(--xp); } .prow .st.held { color: #ffb070; }
+.prow a { color: var(--xp); font-size: 12px; }
+.pempty { padding: 18px; text-align: center; color: var(--muted); font-size: 14px; background: #1c1630; border-radius: 6px; }
+.perr { color: #ff8a8a; font-size: 12px; grid-column: 1 / -1; }
 .link { background: none; border: 0; color: var(--fg); cursor: pointer; font: 600 14px var(--body); text-decoration: none; padding: 6px 4px; }
 .link:hover { color: var(--gold); }
 .link.under { color: var(--muted); font-size: 13px; }
