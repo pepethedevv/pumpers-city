@@ -85,8 +85,11 @@ const needle = (speed, ms) => { const u = (speed * ms / 1000) % 2; return u <= 1
 
 // ---------------- settings (one row in Supabase, edited in the table editor) ----------------
 let settings = { boxes_open: true, prize_amount: 0, prizes_active: 5, prizes_left: 0, wave: 1, max_wins_per_wallet: 1, daily_top: [10000, 5000, 2500] };
-// the daily leaderboard runs from 00:00 to 00:00 UTC
-const today = () => new Date().toISOString().slice(0, 10);
+// the daily leaderboard runs from 19:00 to 19:00 UTC (22:00 Turkey time). A "day" is named after the
+// date it starts on, so the race that starts at 19:00 UTC on Oct 28 is "2026-10-28".
+const RESET_HOUR = env.RESET_HOUR_UTC !== undefined ? +env.RESET_HOUR_UTC : 19;
+const dayOf = ms => new Date(ms - RESET_HOUR * 3600_000).toISOString().slice(0, 10);
+const today = () => dayOf(Date.now());
 let curDay = today();
 let stats = { won: 0, sent: 0, wins: 0, recent: [] };
 async function loadSettings() {
@@ -247,7 +250,7 @@ async function hello(p, msg) {
   applyLook(p, msg.skin);
   p.ready = true;
   send(p, { t: "hi", id: p.id, token: wallet ? token(wallet) : null, wallet, err, name: p.name, level: p.acc.level, canOpen: p.acc.canOpen,
-    xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
+    resetHour: RESET_HOUR, xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
     wins: stats.recent.filter(w => Date.now() - Date.parse(w.at) < 300_000).slice(0, 3) });
   sendBoard(p);
 }
@@ -324,7 +327,7 @@ async function saveXp() {
 }
 async function loadBoard() {
   let rows = [];
-  // today's XP only: the board starts from zero every day at 00:00 UTC
+  // today's XP only: the board starts from zero every day at the reset hour
   if (dbReady()) try { rows = await db(`players?day=eq.${curDay}&day_xp=gt.0&select=wallet,day_xp,name&order=day_xp.desc&limit=10`); } catch (e) { log("board:", e.message); }
   const m = new Map(rows.map(r => [r.wallet, +r.day_xp])), names = new Map(rows.map(r => [r.wallet, r.name]));
   for (const [w, s] of known) { if (s.day === curDay && s.dayXp) m.set(w, Math.max(m.get(w) || 0, s.dayXp)); if (s.name) names.set(w, s.name); }
@@ -434,7 +437,7 @@ setInterval(async () => {
 process.on("SIGTERM", async () => { await saveXp(); process.exit(0); });
 
 // ---------------- daily reset ----------------
-// At 00:00 UTC: save everyone's XP, then the database picks the day's top 3 and puts their prizes
+// At the reset hour (19:00 UTC): save everyone's XP, then the database picks the day's top 3 and puts their prizes
 // in MY PRIZES (award_daily does this once per day, even if called again).
 const fmtN = n => Number(n).toLocaleString("en-US");
 async function awardDay(day) {
@@ -464,6 +467,6 @@ setInterval(async () => {
 
 await loadSettings(); await loadStats();
 // the server may have been off at midnight: hand out yesterday's prizes now (no-op if already done)
-{ const y = new Date(Date.now() - 86400_000).toISOString().slice(0, 10); await awardDay(y); }
+await awardDay(dayOf(Date.now() - 86400_000));
 await loadBoard();
 server.listen(PORT, () => log(`Pumpers City server on :${PORT} · db ${dbReady() ? "on" : "off"} · helius ${env.HELIUS_API_KEY ? "on" : "off"}${DEV ? " · DEV" : ""}`));

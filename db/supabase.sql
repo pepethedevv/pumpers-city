@@ -81,12 +81,15 @@ create or replace view prize_stats as
 revoke all on prize_stats from anon, authenticated;
 
 -- ================= DAILY LEADERBOARD =================
--- The board ranks today's XP (00:00 to 00:00 UTC). At the reset the game server calls award_daily(),
+-- The board ranks each day's XP (19:00 to 19:00 UTC; a day is named after the date it starts on). At the reset the game server calls award_daily(),
 -- which gives the top 3 their prizes in MY PRIZES. Amounts: game_settings.daily_top (1st, 2nd, 3rd).
 alter table players add column if not exists day date;
 alter table players add column if not exists day_xp bigint not null default 0;
 create index if not exists players_day_idx on players (day, day_xp desc);
 alter table game_settings add column if not exists daily_top numeric[] not null default '{10000,5000,2500}';
+-- first day that pays out (launch: 28 Oct 2026, 19:00 UTC). Earlier test days never get prizes.
+alter table game_settings add column if not exists daily_start date;
+update game_settings set daily_start = '2026-10-28' where id = 1 and daily_start is null;
 
 create table if not exists daily_results (
   day    date not null,
@@ -105,6 +108,7 @@ begin
   perform pg_advisory_xact_lock(hashtext('award_daily'));
   if exists (select 1 from daily_results where day = p_day) then return 0; end if;   -- already done
   select * into s from game_settings where id = 1;
+  if s.daily_start is not null and p_day < s.daily_start then return 0; end if;       -- before launch: no prizes
   for r in select wallet, day_xp from players
            where day = p_day and day_xp > 0
            order by day_xp desc, updated_at asc

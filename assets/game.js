@@ -1646,7 +1646,7 @@ const NET = {
         const first = !this.up && this.onHi;
         this.up = true; this.retry = 0; this.token = m.token || this.token; this.wallet = m.wallet || this.wallet;
         Object.assign(state, { tier: TIERS[m.level] || TIERS.none, explorer: !m.canOpen, xp: m.xp, opened: m.opened, found: m.found });
-        this.dayXp = m.dayXp || 0;
+        this.dayXp = m.dayXp || 0; if (m.resetHour !== undefined) this.resetHour = m.resetHour;
         if (m.name) { state.nick = m.name; if (sc && sc.myTag) sc.myTag.setText(m.name); }
         this.online = m.online;
         if (m.err && this.profile.auth && !m.wallet) feed("Wallet check expired. Leave and connect again to open boxes.");
@@ -1856,10 +1856,13 @@ function updateHud() {
   $("rows").innerHTML = rows.map((r, i) =>
     `<li class="${r.me ? "me" : ""}"><span>${r.rank || (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1 + ".")} ${esc(r.n)}</span><span>${r.x}</span></li>`).join("");
 }
-// "Top 3 win $PUMP · resets in 5h 12m · 34 online" (the race resets at 00:00 UTC)
+// "Top 3 win $PUMP · resets in 5h 12m · 34 online" (the race resets at 19:00 UTC, the server says the hour)
 function boardTag() {
   const tag = $("board").querySelector(".tag"); if (!tag) return;
-  const now = new Date(), next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1), m = Math.max(1, Math.round((next - now) / 60000));
+  const h = NET.resetHour ?? 19, now = new Date();
+  let next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h);
+  if (next <= now) next += 86400000;
+  const m = Math.max(1, Math.round((next - now) / 60000));
   tag.textContent = "Top 3 win $PUMP · resets in " + (m >= 60 ? Math.floor(m / 60) + "h " : "") + (m % 60) + "m · " + NET.online + " online";
 }
 setInterval(() => { if (NET.live && !$("board").hidden) boardTag(); }, 30000);
