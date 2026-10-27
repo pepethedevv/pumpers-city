@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pumpers City</title>
+<meta name="description" content="Pumpers City is a pixel city you explore in your browser. Find boxes, pick their locks, and some of them hold real $PUMP.">
+<meta property="og:title" content="Pumpers City">
+<meta property="og:description" content="Explore the city. Crack the boxes. Some hold real $PUMP.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='4' y='1' width='8' height='14' rx='4' fill='%23ffd667' stroke='%23120e1e'/%3E%3Crect x='6' y='6' width='1' height='1' fill='%23120e1e'/%3E%3Crect x='9' y='6' width='1' height='1' fill='%23120e1e'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div id="game"></div>
+
+<!-- ============ IN-GAME HUD ============ -->
+<div class="hud panel" id="stats" hidden>
+  <div id="tier"></div>
+  <div><span class="xp">LV <span id="lv">1</span></span> · <span id="xp">0</span> XP</div>
+  <div class="bar"><i id="xpbar"></i></div>
+  <div>BOXES <b id="opened">0</b></div>
+  <div>FOUND <b id="found">0</b> PUMP</div>
+</div>
+<div class="hud" id="mapbox" hidden><div class="panel" id="district">DOWNTOWN</div><canvas id="minimap"></canvas><div class="hint">TAP MAP OR PRESS M TO ENLARGE</div></div>
+<div id="bigmap" hidden><canvas id="bigcanvas"></canvas><div>WHITE = YOU · PURPLE = BLACK HOLES · TAP TO CLOSE</div></div>
+<div class="hud panel" id="board" hidden>
+  <h3>LEADERBOARD</h3>
+  <ol id="rows"></ol>
+  <div class="tag">Top 3 win prizes</div>
+</div>
+<div class="hud" id="feed"></div>
+<div class="hud" id="wins"></div>
+<div class="hud" id="toast"></div>
+<div class="hud" id="banner"></div>
+<div class="hud" id="help" hidden></div>
+<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide>HOW TO PLAY</button><button type="button" class="chip" id="switch" hidden>SWITCH PUMPER</button><button type="button" class="chip" id="leave">LEAVE</button></div>
+<div class="hud panel" id="lock" hidden>
+  <div class="t">PICK THE LOCK</div>
+  <div class="lockbar"><i id="zone"></i><b id="needle"></b></div>
+  <button type="button" id="lockbtn">OPEN</button>
+  <div id="lockmsg">Hit E, Space or OPEN when the needle is in the gold zone</div>
+</div>
+
+<!-- ============ LANDING GATE ============ -->
+<div id="gate">
+  <header class="topbar">
+    <div class="brand"><span class="pill"></span>PUMPERS CITY</div>
+    <nav>
+      <button type="button" class="link" data-open-guide>How it works</button>
+      <a class="link" id="xlink" href="https://x.com/pumperscity" target="_blank" rel="noopener">@pumperscity</a>
+    </nav>
+  </header>
+  <main class="gatecard">
+    <h1>PUMPERS<br>CITY</h1>
+    <p class="tag">Explore the city. Crack the boxes.<br>Some of them hold real <b>$PUMP</b>.</p>
+    <div class="cta">
+      <button type="button" class="btn gold" id="connect">CONNECT WALLET</button>
+      <button type="button" class="btn ghost" id="guest">PLAY AS GUEST</button>
+      <a class="btn mint" id="mintBtn" href="#" target="_blank" rel="noopener" hidden>MINT A PUMPER · 0.02 SOL</a>
+    </div>
+    <p class="small">Guests can explore every district. Holders can open boxes.</p>
+    <div class="chips" id="facts">
+      <span>7 DISTRICTS</span><span>REAL $PUMP PRIZES</span><span>3,333 NFTS</span>
+    </div>
+    <div class="ca" id="ca" hidden><span>CA</span><code id="caval"></code><button type="button" id="cacopy">COPY</button></div>
+    <button type="button" class="link under" data-open-guide>Read how it works →</button>
+  </main>
+</div>
+
+<!-- ============ WALLET MODAL ============ -->
+<div class="modal" id="walletModal" hidden>
+  <div class="sheet">
+    <button type="button" class="close" data-close aria-label="Close">×</button>
+    <h2>CONNECT A WALLET</h2>
+    <p class="muted">Connecting shares your public address. You then sign a short login message. Signing is free and moves no funds. We never ask for your seed phrase.</p>
+    <div id="walletList" class="wlist"></div>
+    <div id="walletMsg" class="muted small"></div>
+  </div>
+</div>
+
+<!-- ============ ACCESS CARD (after connecting) ============ -->
+<div class="modal" id="accessModal" hidden>
+  <div class="sheet">
+    <button type="button" class="close" data-close aria-label="Close">×</button>
+    <h2 id="accessTitle">YOUR PASS</h2>
+    <div id="accessBody"></div>
+    <div id="nftPick" class="nftpick"></div>
+    <button type="button" class="btn gold wide" id="enter">ENTER THE CITY</button>
+  </div>
+</div>
+
+<!-- ============ DEMO CHARACTERS (?demo=1 only) ============ -->
+<div class="modal" id="demoModal" hidden>
+  <div class="sheet wide">
+    <button type="button" class="close" data-close aria-label="Close">×</button>
+    <h2>DEMO CHARACTERS</h2>
+    <p class="muted">Test mode: try every level and trail before launch.</p>
+    <div class="chars" id="chars"></div>
+  </div>
+</div>
+
+<!-- ============ GUIDE ============ -->
+<div id="guide" hidden>
+  <div class="gwrap">
+    <aside class="toc">
+      <div class="brand"><span class="pill"></span>HOW IT WORKS</div>
+      <a href="#g-start">Getting started</a>
+      <a href="#g-controls">Controls</a>
+      <a href="#g-boxes">Boxes & prizes</a>
+      <a href="#g-access">Who can open boxes</a>
+      <a href="#g-levels">Levels & perks</a>
+      <a href="#g-nft">The NFTs</a>
+      <a href="#g-token">$PUMPERS & prizes</a>
+      <a href="#g-board">Leaderboard</a>
+      <a href="#g-districts">Districts</a>
+      <a href="#g-fair">Fair play</a>
+      <a href="#g-faq">FAQ</a>
+    </aside>
+    <article class="gbody">
+      <button type="button" class="close" id="guideClose" aria-label="Close">×</button>
+
+      <section id="g-start">
+        <h2>WELCOME TO PUMPERS CITY</h2>
+        <p class="lead">Pumpers City is a pixel city you explore right in your browser. Treasure boxes are hidden across seven districts. Every box gives you XP, and some of them hold real <b>$PUMP</b>.</p>
+        <h3>Getting started</h3>
+        <ol>
+          <li><b>Play as guest.</b> No wallet needed. You get a basic character and can explore every district, but you can't open boxes.</li>
+          <li><b>Connect your wallet</b> (Phantom, Solflare or Backpack). We check your $PUMPERS tokens and Pumpers NFTs and set your level. If you own NFTs, you pick one and play as that character.</li>
+          <li><b>Find a box, stand next to it, pick the lock.</b> Collect XP, climb the leaderboard and hope for a prize.</li>
+        </ol>
+        <p class="note">We never ask for your seed phrase or private key. Connecting only shares your public address. Signing the login message is free and moves no funds.</p>
+      </section>
+
+      <section id="g-controls">
+        <h2>CONTROLS</h2>
+        <table>
+          <tr><th>Action</th><th>Computer</th><th>Phone</th></tr>
+          <tr><td>Walk</td><td>WASD or arrow keys, or hold the mouse where you want to go</td><td>Hold or drag your finger, the character follows it</td></tr>
+          <tr><td>Walk to a spot</td><td>Click it</td><td>Tap it</td></tr>
+          <tr><td>Open a box</td><td>Stand next to it and press E or Space</td><td>Stand next to it and tap the box</td></tr>
+          <tr><td>Big map</td><td>M, or click the minimap</td><td>Tap the minimap</td></tr>
+          <tr><td>Travel</td><td colspan="2">Walk into a black hole to jump to another district</td></tr>
+        </table>
+      </section>
+
+      <section id="g-boxes">
+        <h2>BOXES & PRIZES</h2>
+        <p>Boxes glow gold and are spread across every district. To open one:</p>
+        <ol>
+          <li><b>Stand still next to the box.</b> You can't open boxes while walking past.</li>
+          <li><b>Pick the lock.</b> A needle slides along a bar. Press E, Space or OPEN while the needle is inside the gold zone.</li>
+          <li>If you miss, the lock jams for <b>2 seconds</b>, then you can try again.</li>
+        </ol>
+        <div class="cards">
+          <div class="card"><h4>XP IN EVERY BOX</h4><p>Every box gives XP, between 5 and 25 before your multiplier. Higher rolls are rarer.</p></div>
+          <div class="card gold"><h4>REAL $PUMP</h4><p>Some boxes hold a $PUMP prize, sent to the wallet you played with. You only find out when you open one.</p></div>
+          <div class="card"><h4>RELEASED IN BATCHES</h4><p>Prize boxes go live a few at a time. When a batch is found, the next one goes live somewhere in the city.</p></div>
+          <div class="card"><h4>EVERYONE SEES IT</h4><p>When someone opens a prize, every player sees it on screen.</p></div>
+        </div>
+        <p class="note">Which box holds a prize is decided by our server when the box is opened. Nobody, including your browser, can see it in advance.</p>
+      </section>
+
+      <section id="g-access">
+        <h2>WHO CAN OPEN BOXES</h2>
+        <p>Anyone can explore. To open boxes you need one of these:</p>
+        <table>
+          <tr><th>What you hold</th><th>$PUMPERS needed</th><th>Open boxes</th></tr>
+          <tr><td>No NFT</td><td><b>1,000,000</b></td><td class="yes">YES</td></tr>
+          <tr><td>A Common, Rare or Epic NFT</td><td><b>500,000</b></td><td class="yes">YES</td></tr>
+          <tr><td>A Legendary or 1/1 NFT</td><td>None</td><td class="yes">YES</td></tr>
+          <tr><td>10 or more Pumpers NFTs, any rarity</td><td>None</td><td class="yes">YES</td></tr>
+          <tr><td>Anything less, or a guest</td><td>–</td><td class="no">EXPLORE ONLY</td></tr>
+        </table>
+        <p class="muted">Examples: 800,000 tokens alone isn't enough, but 800,000 tokens plus a Common NFT is. 9 Common NFTs with no tokens isn't enough, 10 is. If the token price rises a lot, we will lower these amounts to keep the game open to everyone.</p>
+      </section>
+
+      <section id="g-levels">
+        <h2>LEVELS & PERKS</h2>
+        <p>Your level comes from your $PUMPERS balance or your best NFT, <b>whichever is higher</b>. The two don't add up.</p>
+        <table>
+          <tr><th>Level</th><th>$PUMPERS</th><th>or NFT</th><th>Walk speed</th><th>XP per box</th></tr>
+          <tr><td><span class="t-common">COMMON</span></td><td>1,000,000</td><td>Common</td><td>+5%</td><td>x1.2</td></tr>
+          <tr><td><span class="t-rare">RARE</span></td><td>2,500,000</td><td>Rare</td><td>+10%</td><td>x1.4</td></tr>
+          <tr><td><span class="t-epic">EPIC</span></td><td>5,000,000</td><td>Epic</td><td>+15%</td><td>x1.6</td></tr>
+          <tr><td><span class="t-leg">LEGENDARY</span></td><td>10,000,000</td><td>Legendary</td><td>+22%</td><td>x1.8</td></tr>
+          <tr><td><span class="t-one">1/1</span></td><td>20,000,000 (2% of supply)</td><td>1/1</td><td>+30%</td><td>x2</td></tr>
+        </table>
+        <div class="cards">
+          <div class="card"><h4>TRAILS</h4><p>Each of the 10 one-of-one NFTs leaves its own trail behind it as it walks: ice, lava, gold coins, glitches and more. Wallets holding 20,000,000+ $PUMPERS leave a gold trail.</p></div>
+          <div class="card"><h4>MORE COMING</h4><p>More holder perks are on the way. Holding both tokens and NFTs will matter.</p></div>
+        </div>
+      </section>
+
+      <section id="g-nft">
+        <h2>THE NFTS</h2>
+        <p><b>3,333 Pumpers:</b> 3,323 generated pixel pills plus 10 hand-made one-of-ones. Each NFT is a playable character. You walk the city as your own Pumper.</p>
+        <table>
+          <tr><th>Mint price</th><td>0.02 SOL, the same for everyone</td></tr>
+          <tr><th>Per wallet</th><td>Up to 15 mints</td></tr>
+          <tr><th>Royalties</th><td>5%</td></tr>
+          <tr><th>Traits</th><td>Skin, eyes, mouth, hat and background</td></tr>
+        </table>
+        <h3>How rarity is decided</h3>
+        <p>Every trait has a rarity score: the fewer Pumpers share it, the higher the score. A Pumper's tier comes from the <b>total score of all five traits</b>, not from any single trait. A crown alone won't make a Legendary, but a crown with a gold skin will.</p>
+        <table>
+          <tr><th>Tier</th><th>Count</th><th>Share</th></tr>
+          <tr><td><span class="t-leg">LEGENDARY</span></td><td>166</td><td>top 5%</td></tr>
+          <tr><td><span class="t-epic">EPIC</span></td><td>332</td><td>next 10%</td></tr>
+          <tr><td><span class="t-rare">RARE</span></td><td>831</td><td>next 25%</td></tr>
+          <tr><td><span class="t-common">COMMON</span></td><td>1,994</td><td>the rest</td></tr>
+          <tr><td><span class="t-one">1/1</span></td><td>10</td><td>hand-made, each with its own trail</td></tr>
+        </table>
+        <p class="muted">After mint, every Pumper's score and rank is published so anyone can check it.</p>
+      </section>
+
+      <section id="g-token">
+        <h2>$PUMPERS & PRIZES</h2>
+        <ul>
+          <li>$PUMPERS launches on pump.fun.</li>
+          <li>Prizes are paid in <b>$PUMP</b>. What's inside stays a secret until someone opens the box.</li>
+          <li>Creator fees keep refilling the prize boxes, and prizes will grow over time.</li>
+          <li>Every payout can be checked on Solscan.</li>
+        </ul>
+      </section>
+
+      <section id="g-board">
+        <h2>LEADERBOARD</h2>
+        <p>Every box you open adds XP to your wallet's total. The leaderboard ranks players by XP, and the <b>top 3 win prizes</b>. Prize details are announced on <a href="https://x.com/pumperscity" target="_blank" rel="noopener">@pumperscity</a>.</p>
+      </section>
+
+      <section id="g-districts">
+        <h2>DISTRICTS</h2>
+        <p>Downtown is the hub. From the central plaza, a black hole leads to each district. Some districts are also linked to each other.</p>
+        <div class="cards">
+          <div class="card"><h4>DOWNTOWN</h4><p>Streets, shops, parks and a river. The portal plaza is in the middle.</p></div>
+          <div class="card"><h4>HARBOR</h4><p>Container yard, cranes, piers with boats, a fish market and a lighthouse.</p></div>
+          <div class="card"><h4>INDUSTRIAL ZONE</h4><p>Smoking factories, tanks, rail yards, scrapyards and a canal.</p></div>
+          <div class="card"><h4>CENTRAL PARK</h4><p>A big lake with an island, winding paths and a garden.</p></div>
+          <div class="card"><h4>WHISPER FOREST</h4><p>Old trees, a stream, cabins and campfires.</p></div>
+          <div class="card"><h4>VOLCANO ISLAND</h4><p>Lava rivers, hot springs, ruins and black sand.</p></div>
+          <div class="card"><h4>FROST PEAKS</h4><p>Snowy mountains, frozen lakes and an igloo village.</p></div>
+        </div>
+      </section>
+
+      <section id="g-fair">
+        <h2>FAIR PLAY</h2>
+        <ul>
+          <li>Movement and box opening are checked by our server. Teleporting, speed hacks and auto-openers don't work.</li>
+          <li>Each wallet has limits on how many boxes it can open, so bots and multi-wallets gain nothing.</li>
+          <li>Holdings are checked when you connect and again before a prize is paid.</li>
+          <li>Suspicious wins can be held for review before payout.</li>
+        </ul>
+      </section>
+
+      <section id="g-faq">
+        <h2>FAQ</h2>
+        <details><summary>Do I need a wallet to play?</summary><p>No. Guests can explore every district. You need a wallet with tokens or NFTs to open boxes.</p></details>
+        <details><summary>Which wallets work?</summary><p>Phantom, Solflare and Backpack. On a phone, open this site inside your wallet app's browser.</p></details>
+        <details><summary>Is it safe to connect?</summary><p>Connecting only shares your public address. The login signature is free and can't move funds. We will never ask for your seed phrase. Anyone who does is a scammer.</p></details>
+        <details><summary>I bought tokens. Why can't I open boxes yet?</summary><p>Reconnect your wallet so your holdings are checked again, and make sure the tokens are in the wallet you connected.</p></details>
+        <details><summary>I own several Pumpers. Which one do I play as?</summary><p>You choose. After connecting, pick any Pumper you own, and switch any time in the game with SWITCH PUMPER. Your level and perks always come from your best one.</p></details>
+        <details><summary>Does it work on phones?</summary><p>Yes. Hold or drag to walk, tap a box to open it, and tap the minimap for the big map.</p></details>
+        <details><summary>How do I get my prize?</summary><p>Prizes are sent to the wallet you played with.</p></details>
+      </section>
+    </article>
+  </div>
+</div>
+
+<script src="assets/config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
+<script src="assets/game.js"></script>
+<script src="assets/site.js"></script>
+</body>
+</html>
