@@ -1172,6 +1172,10 @@ class City extends Phaser.Scene {
     if (this.attract) { this.player.setVisible(false); this.player.shadow.setVisible(false); this.tour = attractTour(m); this.tourI = 0; Object.assign(this.player, this.tour[0]); sp = { ...this.tour[0] }; }
     cam.startFollow(this.player, true, 0.15, 0.15); cam.centerOn(sp.x, sp.y);
     this.lastMove = 0;
+    // fresh start after travelling: no leftover walk target, and the black hole you came out of
+    // stays inactive until you have walked away from it (stops players bouncing back and forth)
+    this.moveTarget = null; this.hold = null;
+    this.arrivedFrom = back ? { x: back.x * T + 8, y: back.y * T + 8 } : null;
     this.updateChunks(true);
 
     // citizens: every one uses a different look
@@ -1429,12 +1433,15 @@ class City extends Phaser.Scene {
   ringStep(time, p) {
     this.ring.clear();
     for (const P of this.portals) {
+      const dim = this.arrivedFrom && this.arrivedFrom.x === P.x && this.arrivedFrom.y === P.y;
       if (this.inView(P.x, P.y, 60)) for (let i = 0; i < 3; i++) {
-        this.ring.lineStyle(2, [0xb07aff, 0x6a3acc, 0xe6d2ff][i], 0.9);
+        this.ring.lineStyle(2, [0xb07aff, 0x6a3acc, 0xe6d2ff][i], dim ? 0.3 : 0.9);
         const a = time / (300 + i * 120) + i * 2;
         this.ring.beginPath(); this.ring.arc(P.x, P.y, 11 + i * 4, a, a + 2.4); this.ring.strokePath();
       }
-      if (p && Phaser.Math.Distance.Between(p.x, p.y, P.x, P.y) < 10) {
+      if (p && this.arrivedFrom && Phaser.Math.Distance.Between(p.x, p.y, this.arrivedFrom.x, this.arrivedFrom.y) > 80) this.arrivedFrom = null;
+      const resting = this.arrivedFrom && this.arrivedFrom.x === P.x && this.arrivedFrom.y === P.y;
+      if (p && !resting && Phaser.Math.Distance.Between(p.x, p.y, P.x, P.y) < 10) {
         this.leaving = true; closeLock();
         this.tweens.add({ targets: [p, p.shadow], scale: 0, rotation: 6, x: P.x, y: P.y, duration: 450 });
         this.cameras.main.fadeOut(450, 18, 14, 30);
