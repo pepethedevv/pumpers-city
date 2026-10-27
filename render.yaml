@@ -1,0 +1,19 @@
+# Render Blueprint for the multiplayer game server (render.com → New → Blueprint → this repo)
+services:
+  - type: web
+    name: pumpers-city-server
+    runtime: node
+    rootDir: server
+    plan: starter
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: HELIUS_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false

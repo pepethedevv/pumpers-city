@@ -57,7 +57,7 @@ Prizes are only ever created by the server. The browser never decides a prize ou
 
 ## Game server (`server/`)
 
-Runs on Railway with Root Directory `server` (`npm start`). Variables: `HELIUS_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `PORT`.
+Runs on Render (`render.yaml` Blueprint) or any Node host with Root Directory `server` (`npm start`). Variables: `HELIUS_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (`PORT` is set by the host).
 Optional: `ALLOWED_SITES` (default `pumperscity.com`), `CHANNEL_CAP` (100), `MAX_PLAYERS` (600), `OPENS_PER_HOUR` (150), `BOXES_PER_ROOM` (120).
 
 - Login: the same signed wallet message as the site, then holdings through Helius (re-checked every 5 minutes).
