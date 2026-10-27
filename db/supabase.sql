@@ -19,3 +19,63 @@ create index if not exists prizes_wallet_idx on prizes (wallet, created_at desc)
 
 -- only the server (service key) may read or write; the public anon key gets nothing
 alter table prizes enable row level security;
+
+-- ================= GAME SERVER (multiplayer) =================
+-- Safe to run again: it only adds what is missing.
+
+-- XP and the leaderboard
+create table if not exists players (
+  wallet     text primary key,
+  name       text,
+  xp         bigint  not null default 0,
+  opened     int     not null default 0,
+  found      numeric not null default 0,
+  updated_at timestamptz not null default now()
+);
+create index if not exists players_xp_idx on players (xp desc);
+alter table players enable row level security;
+
+-- Prize waves. One row; edit it in Table Editor → game_settings.
+--   prizes_left    how many prizes are still to be found in this wave (set 10 to start a wave of 10)
+--   prizes_active  how many of them are hidden in boxes at the same time
+--   prize_amount   $PUMP per prize in this wave
+--   wave           raise by 1 when you start a new wave
+--   max_wins_per_wallet  how many prizes one wallet can win in a wave
+--   boxes_open     false = nobody can open boxes (walking around still works)
+create table if not exists game_settings (
+  id                  int primary key default 1 check (id = 1),
+  boxes_open          boolean not null default true,
+  prize_amount        numeric not null default 0,
+  prizes_active       int     not null default 5,
+  prizes_left         int     not null default 0,
+  wave                int     not null default 1,
+  max_wins_per_wallet int     not null default 1
+);
+insert into game_settings (id) values (1) on conflict (id) do nothing;
+alter table game_settings enable row level security;
+
+alter table prizes add column if not exists wave int;
+
+-- Called by the game server when someone opens a prize box. Takes one prize from the wave and
+-- records it for the wallet in one step, so a wave can never give out more than prizes_left.
+create or replace function take_prize(p_wallet text, p_district text) returns numeric
+language plpgsql as $$
+declare s game_settings; won int;
+begin
+  select * into s from game_settings where id = 1 for update;
+  if s is null or not s.boxes_open or s.prizes_left <= 0 or s.prize_amount <= 0 then return null; end if;
+  select count(*) into won from prizes where wallet = p_wallet and wave = s.wave;
+  if won >= s.max_wins_per_wallet then return null; end if;
+  update game_settings set prizes_left = prizes_left - 1 where id = 1;
+  insert into prizes (wallet, amount, district, wave) values (p_wallet, s.prize_amount, p_district, s.wave);
+  return s.prize_amount;
+end $$;
+revoke execute on function take_prize(text, text) from public, anon, authenticated;
+
+-- totals for the site counter
+create or replace view prize_stats as
+  select coalesce(sum(amount), 0) as won,
+         coalesce(sum(amount) filter (where status = 'sent'), 0) as sent,
+         count(*) as wins
+  from prizes;
+revoke all on prize_stats from anon, authenticated;

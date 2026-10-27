@@ -18,7 +18,8 @@ Your Pumper NFT is your character. Your $PUMPERS and NFT holdings decide your le
 | `api/prizes.js` | Lists a wallet's prizes (and settles any payout still in flight) |
 | `api/claim.js` | Claims one prize: verifies the signed claim, re-checks holdings, locks the prize, sends $PUMP from the prize wallet |
 | `api/_lib.js` | Shared code: public addresses, access rules, signature checks, Helius and Supabase helpers |
-| `db/supabase.sql` | The `prizes` table (run once in Supabase) |
+| `db/supabase.sql` | Database: `prizes`, `players` (XP and leaderboard), `game_settings` (prize waves), `take_prize()` (run in Supabase; safe to run again) |
+| `server/` | Multiplayer game server (Node + WebSocket) for Railway. Players see each other; boxes, lock timing, XP and prizes are decided here |
 
 ## Deploy
 
@@ -53,3 +54,17 @@ Add `?demo=1` to the URL to try every level, NFT tier and trail.
 Winners open **MY PRIZES** in the game and press **CLAIM**. They sign a free message, the server checks the signature and their holdings again, moves the prize from `ready` to `sending` in one atomic update (so a double click can't pay twice), stores the transaction signature before sending, and marks it `sent` once confirmed. If a send is rejected the prize goes back to `ready`; if it is still in flight, the next prize list refresh settles it from the stored signature.
 
 Prizes are only ever created by the server. The browser never decides a prize outside test mode.
+
+## Game server (`server/`)
+
+Runs on Railway with Root Directory `server` (`npm start`). Variables: `HELIUS_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `PORT`.
+Optional: `ALLOWED_SITES` (default `pumperscity.com`), `CHANNEL_CAP` (100), `MAX_PLAYERS` (600), `OPENS_PER_HOUR` (150).
+
+- Login: the same signed wallet message as the site, then holdings through Helius (re-checked every 5 minutes).
+- Each district is split into channels of 100 players. Positions go only to players nearby, 10 times a second.
+- Movement speed and walls are checked on the server; box opening needs you next to the box; lock timing is checked against the server's needle.
+- Prize waves come from the `game_settings` row: `prizes_active` boxes hold a prize at any time until `prizes_left` runs out. Only the server knows which ones.
+- `GET /status` → players online, total $PUMP won, recent winners (used by the landing page).
+
+`server/mapgen.mjs` and `server/lib.mjs` are generated from the site's map code and `api/_lib.js` (`build_server.py`), so the server and the browser always agree on maps and rules.
+The site connects when `GAME_SERVER` is set in `assets/config.js`; without it the game runs single player.

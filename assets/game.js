@@ -1135,7 +1135,7 @@ function shadowCanvas() {
 // ================= SCENE =================
 class City extends Phaser.Scene {
   constructor() { super("city"); }
-  init(data) { this.mapKey = data.map || "downtown"; this.from = data.from || null; this.attract = !!data.attract; this.m = getMap(this.mapKey); }
+  init(data) { this.mapKey = data.map || "downtown"; this.from = data.from || null; this.attract = !!data.attract; this.keepRoom = !!data.keepRoom; this.m = getMap(this.mapKey); this.live = !this.attract && NET.live; this.ready = false; }
   preload() {
     for (const [k, v] of Object.entries(SPRITES.players)) this.load.image("p_" + k, v);
     for (const [k, v] of Object.entries(SPRITES.oneofones)) this.load.image("o_" + k, v);
@@ -1189,8 +1189,9 @@ class City extends Phaser.Scene {
       n.target = null; n.wait = r() * 2000; n.speed = 30 + r() * 25;
       this.npcs.push(n);
     }
-    this.boxes = [];
-    for (let i = 0; i < 120; i++) this.spawnBox(r);
+    this.boxes = []; this.others = new Map();
+    // online: the server owns the boxes and tells us where they are; offline: 120 local boxes
+    if (!this.live) for (let i = 0; i < 120; i++) this.spawnBox(r);
 
     // input
     this.keys = this.input.keyboard.addKeys("W,A,S,D,UP,DOWN,LEFT,RIGHT,E,SPACE,ESC");
@@ -1222,7 +1223,85 @@ class City extends Phaser.Scene {
     this.time.addEvent({ delay: 120, loop: true, callback: () => this.ambient() });
     for (const L of m.lights) { const g = this.add.circle(L.x, L.y, 26, 0xfff4a0, 0.0).setDepth(100).setBlendMode(Phaser.BlendModes.ADD); this.tweens.add({ targets: g, alpha: 0.55, scale: 1.4, yoyo: true, repeat: -1, duration: 1100, hold: 300 }); }
     updateHud();
+    this.ready = true;
+    if (this.live) {
+      if (NET.room && NET.room.map === this.mapKey) this.applyRoom(NET.room);
+      else if (NET.room) this.time.delayedCall(0, () => this.scene.restart({ map: NET.room.map, keepRoom: true }));
+      else if (!this.from && !this.keepRoom) NET.enter(this.mapKey);
+    }
   }
+  // ---------- online play ----------
+  applyRoom(m) {
+    for (const b of this.boxes) { b.s.destroy(); b.glow.destroy(); }
+    this.boxes = [];
+    for (const id of [...this.others.keys()]) this.removeOther(id);
+    for (const b of m.boxes) this.addBox(b.x, b.y, b.id);
+    for (const p of m.players) this.addOther(p);
+    if (Phaser.Math.Distance.Between(this.player.x, this.player.y, m.x, m.y) > 24) { this.player.setPosition(m.x, m.y); this.moveTarget = null; this.cameras.main.centerOn(m.x, m.y); }
+    NET.sendPos(this.player.x, this.player.y, this.player.flipX, true);
+  }
+  addOther(p) {
+    if (this.others.has(p.id)) this.removeOther(p.id);
+    const s = this.add.image(p.x, p.y, upTex(this, "p_Explorer")).setOrigin(0.5, 0.9).setScale(0.25).setFlipX(!!p.f);
+    const shadow = this.add.image(p.x, p.y + 1, "shadow");
+    const label = this.add.text(p.x, p.y - 20, p.name, { fontFamily: '"Press Start 2P"', fontSize: "6px", color: "#f2ecff", stroke: "#140e1e", strokeThickness: 2 }).setOrigin(0.5).setResolution(4);
+    const o = { id: p.id, s, shadow, label, tx: p.x, ty: p.y, trail: p.trail, i: 0, lastTrail: 0 };
+    this.others.set(p.id, o);
+    this.skinOther(o, p.skin);
+  }
+  async skinOther(o, skin) {
+    let key = "p_Explorer";
+    if (skin && skin.o && this.textures.exists("o_" + skin.o)) key = "o_" + skin.o;
+    else if (skin && skin.n) { const pr = { spriteNum: skin.n }; await PC.loadSprite(pr); if (pr.tex) key = pr.tex; }
+    if (this.others.get(o.id) === o && this.sys.isActive()) o.s.setTexture(upTex(this, key));
+  }
+  lookOther(m) { const o = this.others.get(m.id); if (!o) return; o.label.setText(m.name); o.trail = m.trail; this.skinOther(o, m.skin); }
+  removeOther(id) { const o = this.others.get(id); if (!o) return; o.s.destroy(); o.shadow.destroy(); o.label.destroy(); this.others.delete(id); }
+  netMoves(u) {
+    for (let i = 0; i < u.length; i += 4) {
+      const o = this.others.get(u[i]); if (!o) continue;
+      o.tx = u[i + 1]; o.ty = u[i + 2]; o.s.setFlipX(!!u[i + 3]);
+    }
+  }
+  othersStep(time, dt) {
+    const k = Math.min(1, dt / 110);
+    for (const o of this.others.values()) {
+      const s = o.s, dx = o.tx - s.x, dy = o.ty - s.y, d = Math.hypot(dx, dy);
+      if (d > 220) s.setPosition(o.tx, o.ty);
+      else if (d > 0.3) { s.x += dx * k; s.y += dy * k; }
+      const moving = d > 0.6;
+      s.rotation = moving ? Math.sin(time / 70 + o.id) * 0.06 : 0;
+      s.setDepth(s.y); o.shadow.setPosition(s.x, s.y + 1).setDepth(s.y - 0.5);
+      o.label.setPosition(Math.round(s.x), Math.round(s.y - 20)).setDepth(s.y + 0.5);
+      const tr = moving && o.trail && TRAILS[o.trail];
+      if (tr && time - o.lastTrail > tr.every && this.inView(s.x, s.y)) { o.lastTrail = time; o.i++; tr.spawn(this, s, o.i); }
+    }
+  }
+  correct(x, y) { this.player.setPosition(x, y); this.moveTarget = null; NET.last = null; }
+  boxGone(id) {
+    const box = this.boxes.find(b => b.id === id && !b.done); if (!box) return;
+    if (lockState && lockState.box === box) closeLock("Someone else got that one first", "#a99cc8");
+    box.done = true; this.tweens.killTweensOf(box.s); box.s.setTexture("chestOpen");
+    this.burst(box.x, box.y - 8, 0x7fd8ff, 8);
+    this.time.delayedCall(900, () => this.tweens.add({ targets: [box.s, box.glow], alpha: 0, duration: 400, onComplete: () => { box.s.destroy(); box.glow.destroy(); this.boxes = this.boxes.filter(b => b !== box); } }));
+  }
+  lockStart(m) {
+    const box = this.boxes.find(b => b.id === m.id && !b.done);
+    this.asking = null;
+    if (!box || lockState || this.leaving) { NET.send({ t: "c" }); return; }
+    openLock(this, box, m);
+  }
+  lockResult(m) {
+    const box = this.boxes.find(b => b.id === m.id);
+    closeLock();
+    if (box) this.finishOpen(box, m);
+  }
+  lockMiss(id) {
+    const box = this.boxes.find(b => b.id === id);
+    if (box) box.jamUntil = this.time.now + 2000;
+    closeLock("Missed! Try again in 2 seconds.", "#ff8a8a");
+  }
+  denied(m) { this.asking = null; closeLock(); toast(m.msg, "#a99cc8"); }
   fitZoom() {
     // same feel as before in screen points, but on high-density screens snap to a whole number of
     // device pixels per map pixel, so every map pixel is drawn the same size and nothing shimmers
@@ -1309,11 +1388,15 @@ class City extends Phaser.Scene {
       p = this.randomWalkable(r || Math.random);
       if (this.portals.every(P => Phaser.Math.Distance.Between(p.x, p.y, P.x, P.y) > 64) && this.boxes.every(b => b.done || Phaser.Math.Distance.Between(p.x, p.y, b.x, b.y) > 160)) break;
     }
+    this.addBox(p.x, p.y);
+  }
+  addBox(x, y, id) {
+    const p = { x, y };
     const glow = this.add.circle(p.x, p.y - 2, 12, 0xffd25a, 0.22).setDepth(p.y - 1);
     this.tweens.add({ targets: glow, scale: 1.3, alpha: 0.08, yoyo: true, repeat: -1, duration: 800 + Math.random() * 400 });
     const s = this.add.image(p.x, p.y, "chest").setOrigin(0.5, 0.8).setDepth(p.y);
     this.tweens.add({ targets: s, y: p.y - 2, yoyo: true, repeat: -1, duration: 700, ease: "Sine.inOut" });
-    this.boxes.push({ x: p.x, y: p.y, s, glow, done: false, jamUntil: 0 });
+    this.boxes.push({ id, x: p.x, y: p.y, s, glow, done: false, jamUntil: 0 });
   }
   nearestBox(range = 20) {
     let best = null, bd = range;
@@ -1327,29 +1410,44 @@ class City extends Phaser.Scene {
     if (!this.standing()) { toast("Stop next to the box to open it", "#a99cc8"); return; }
     if (state.explorer) { toast("Hold $PUMPERS to open boxes", "#a99cc8"); feed("Explorers can look around. Holders open boxes."); return; }
     if (box.jamUntil > this.time.now) { toast("Lock jammed. Wait a moment", "#ff8a8a"); return; }
+    if (this.live) {
+      // online: ask the server; it checks you are really next to the box and sends the lock back
+      if (!NET.up) { toast("Reconnecting…", "#a99cc8"); return; }
+      if (this.asking && this.time.now - this.asking < 2000) return;
+      this.asking = this.time.now; NET.sendPos(this.player.x, this.player.y, this.player.flipX, true); NET.send({ t: "o", id: box.id });
+      return;
+    }
     openLock(this, box);
   }
-  finishOpen(box) {
+  // res comes from the server when online: { xp, total, opened, found, prize }
+  finishOpen(box, res) {
     box.done = true;
-    // Real game: the server decides the result now and checks the lock timing. The browser never knows which box holds a prize.
-    // Only test mode rolls prizes in the browser. On the live site prizes come from the server, never from here.
-    const win = !!window.PC_DEMO && state.pool > 0 && Math.random() < 0.05;
-    const xp = Math.round(rollXp() * state.tier.xp);
+    let win, prize, xp;
+    if (res) {
+      // the server decided all of this; the browser never knows which box holds a prize
+      xp = res.xp; prize = res.prize || 0; win = prize > 0;
+      Object.assign(state, { xp: res.total, opened: res.opened, found: res.found });
+    } else {
+      // offline / test mode only: prizes here are never real
+      win = !!window.PC_DEMO && state.pool > 0 && Math.random() < 0.05; prize = PRIZE;
+      xp = Math.round(rollXp() * state.tier.xp);
+      state.opened++; state.xp += xp;
+      if (win) { state.pool--; state.found += PRIZE; }
+    }
     this.tweens.killTweensOf(box.s); box.s.setTexture("chestOpen");
     this.tweens.add({ targets: box.s, scaleX: 1.3, scaleY: 1.3, yoyo: true, duration: 140 });
-    state.opened++; state.xp += xp;
     if (win) {
-      state.pool--; state.found += PRIZE;
       this.burst(box.x, box.y - 8, 0xffd25a, 30); this.cameras.main.shake(220, 0.004);
-      toast("+" + PRIZE.toLocaleString("en-US") + " PUMP!", "#ffd667");
-      announceWin("You", PRIZE, this.m.name, true);
-      // the site adds it to MY PRIZES (in the real game the server records the prize)
-      window.dispatchEvent(new CustomEvent("pc:prize", { detail: { amount: PRIZE, district: this.m.name } }));
+      toast("+" + prize.toLocaleString("en-US") + " PUMP!", "#ffd667");
+      announceWin("You", prize, this.m.name, true);
+      // MY PRIZES picks it up (online the server has already recorded it)
+      window.dispatchEvent(new CustomEvent("pc:prize", { detail: { amount: prize, district: this.m.name } }));
     } else this.burst(box.x, box.y - 8, 0x7fd8ff, 12);
     this.floatText(box.x, box.y - 18, "+" + xp + " XP" + (state.tier.xp > 1 ? " (x" + state.tier.xp + ")" : ""), "#7fd8ff");
     updateHud();
-    this.time.delayedCall(1300, () => this.tweens.add({ targets: [box.s, box.glow], alpha: 0, duration: 400, onComplete: () => { box.s.destroy(); box.glow.destroy(); } }));
-    this.time.delayedCall(30000, () => { if (this.scene.isActive()) this.spawnBox(); });
+    this.time.delayedCall(1300, () => this.tweens.add({ targets: [box.s, box.glow], alpha: 0, duration: 400, onComplete: () => { box.s.destroy(); box.glow.destroy(); this.boxes = this.boxes.filter(b => b !== box); } }));
+    // online the server puts a new box somewhere and tells everyone
+    if (!res) this.time.delayedCall(30000, () => { if (this.scene.isActive()) this.spawnBox(); });
   }
   burst(x, y, color, n) {
     for (let i = 0; i < n; i++) {
@@ -1367,6 +1465,7 @@ class City extends Phaser.Scene {
     x.drawImage(this.miniBase, 0, 0);
     const v = this.cameras.main.worldView; x.strokeStyle = "rgba(255,255,255,.85)"; x.lineWidth = 2; x.strokeRect(v.x / T, v.y / T, v.width / T, v.height / T);
     for (const p of m.portals) { x.fillStyle = "#1a0a2a"; x.fillRect(p.x - 4, p.y - 4, 9, 9); x.fillStyle = "#c08aff"; x.fillRect(p.x - 3, p.y - 3, 7, 7); }
+    x.fillStyle = "#7fd8ff"; for (const o of this.others.values()) x.fillRect(Math.floor(o.s.x / T) - 2, Math.floor(o.s.y / T) - 2, 5, 5);
     const px = Math.floor(this.player.x / T), py = Math.floor(this.player.y / T);
     x.fillStyle = "#000000"; x.fillRect(px - 4, py - 4, 9, 9); x.fillStyle = "#ffffff"; x.fillRect(px - 3, py - 3, 7, 7);
     if (!$("bigmap").hidden) { const c = $("bigcanvas"); if (c.width !== m.W) { c.width = m.W; c.height = m.H; } c.getContext("2d").drawImage(this.mini, 0, 0); }
@@ -1377,7 +1476,7 @@ class City extends Phaser.Scene {
     if (this.attract) { this.tourStep(dt); this.npcStep(time, dt); this.ringStep(time); return; }
     const k = this.keys, sp = 0.11 * state.tier.speed * dt;
     let vx = (k.D.isDown || k.RIGHT.isDown) - (k.A.isDown || k.LEFT.isDown), vy = (k.S.isDown || k.DOWN.isDown) - (k.W.isDown || k.UP.isDown);
-    if (lockState && (vx || vy || this.moveTarget)) closeLock("You moved away. Stand still to pick the lock.");
+    if (lockState && !lockState.waiting && (vx || vy || this.moveTarget)) { closeLock("You moved away. Stand still to pick the lock."); if (this.live) NET.send({ t: "c" }); }
     if (vx || vy) { this.moveTarget = null; this.hold = null; }
     else if (this.hold && this.hold.p.isDown && !lockState) {
       const wp = this.cameras.main.getWorldPoint(this.hold.p.x, this.hold.p.y);
@@ -1404,6 +1503,7 @@ class City extends Phaser.Scene {
       p.rotation = Math.sin(time / 70) * 0.06;
     } else p.rotation = 0;
     p.setDepth(p.y); p.shadow.setPosition(p.x, p.y + 1).setDepth(p.y - 0.5);
+    if (this.live) { NET.sendPos(p.x, p.y, p.flipX); this.othersStep(time, dt); }
 
     this.npcStep(time, dt);
     this.ringStep(time, p);
@@ -1415,7 +1515,7 @@ class City extends Phaser.Scene {
       else if (this.standing()) label = "[E] OPEN";
       if (label) this.prompt.setPosition(b.x, b.y - 22).setText(label).setVisible(true); else this.prompt.setVisible(false);
     } else this.prompt.setVisible(false);
-    if (lockState) lockTick(dt);
+    if (lockState) lockTick();
   }
   tourStep(dt) {
     const p = this.player, w = this.tour[(this.tourI + 1) % this.tour.length], dx = w.x - p.x, dy = w.y - p.y, d = Math.hypot(dx, dy), s = 0.045 * dt;
@@ -1449,6 +1549,7 @@ class City extends Phaser.Scene {
       const resting = this.arrivedFrom && this.arrivedFrom.x === P.x && this.arrivedFrom.y === P.y;
       if (p && !resting && Phaser.Math.Distance.Between(p.x, p.y, P.x, P.y) < 10) {
         this.leaving = true; closeLock();
+        if (this.live) { NET.sendPos(p.x, p.y, p.flipX, true); NET.travel(P.to); }
         this.tweens.add({ targets: [p, p.shadow], scale: 0, rotation: 6, x: P.x, y: P.y, duration: 450 });
         this.cameras.main.fadeOut(450, 18, 14, 30);
         this.cameras.main.once("camerafadeoutcomplete", () => this.scene.restart({ map: P.to, from: this.mapKey }));
@@ -1467,6 +1568,107 @@ function attractTour(m) {
   const P = (x, y) => ({ x: (x + 1) * T + 8, y: (y + 1) * T + 8 });
   return [P(vx[0], hy[0]), P(vx[1], hy[0]), P(vx[1], hy[1]), P(vx[0], hy[1])];
 }
+
+// ================= MULTIPLAYER =================
+// Talks to the game server (PC_CONFIG.GAME_SERVER). Without a server the game runs alone in the browser
+// exactly as before: local boxes, XP only, no prizes.
+const NET = {
+  ws: null, live: false, up: false, token: null, wallet: null, profile: null, room: null, board: [], online: 0,
+  last: null, lastT: 0, retry: 0, stopped: true, onHi: null,
+  url() {
+    const q = new URLSearchParams(location.search).get("server");
+    return q || (window.PC_CONFIG || {}).GAME_SERVER || "";
+  },
+  skinOf(profile) {
+    if (profile.tex && profile.tex.startsWith("o_")) return { o: profile.tex.slice(2) };
+    if (profile.spriteNum) return { n: profile.spriteNum };
+    return null;
+  },
+  // resolves with the server's welcome, or null when there is no server / it can't be reached
+  start(profile) {
+    this.stop();
+    const url = this.url();
+    if (!url) return Promise.resolve(null);
+    this.profile = profile; this.stopped = false; this.token = null; this.wallet = null; this.retry = 0;
+    return new Promise(res => {
+      const timer = setTimeout(() => { this.onHi = null; if (!this.up) { this.stop(); res(null); } }, 5000);
+      this.onHi = hi => { clearTimeout(timer); res(hi); };
+      this.connect();
+    });
+  },
+  connect() {
+    let ws;
+    try { ws = new WebSocket(this.url()); } catch { return this.later(); }
+    this.ws = ws;
+    ws.onopen = () => {
+      const p = this.profile, a = p.auth;
+      const hello = { t: "hello", skin: this.skinOf(p) };
+      if (this.token) hello.token = this.token; else if (a) Object.assign(hello, { wallet: a.wallet, message: a.message, signature: a.signature });
+      if (window.PC_DEMO) hello.dev = { canOpen: !!p.canOpen, tier: p.tier, name: p.name, trail: p.trail || null };
+      ws.send(JSON.stringify(hello));
+    };
+    ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } this.handle(m); };
+    ws.onclose = e => {
+      if (this.ws !== ws) return;
+      const was = this.up; this.up = false; this.ws = null;
+      if (this.stopped) return;
+      if (e.code === 4001 || e.code === 4003) { this.stopped = true; if (this.live) { state.explorer = true; updateHud(); feed(e.code === 4003 ? "The city is full right now. Try again in a minute." : "Disconnected: Pumpers City is open somewhere else."); } return; }
+      if (was) feed("Connection lost. Reconnecting…");
+      this.later();
+    };
+  },
+  later() { if (this.stopped) return; const d = Math.min(10000, 1000 * 2 ** this.retry++); setTimeout(() => { if (!this.stopped && !this.ws) this.connect(); }, d); },
+  stop() { this.stopped = true; this.live = false; this.up = false; this.room = null; if (this.ws) { const w = this.ws; this.ws = null; try { w.close(); } catch {} } },
+  send(m) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(m)); },
+  // position, at most 10 times a second and only when it changed
+  sendPos(x, y, f, force) {
+    const k = Math.round(x) + "," + Math.round(y) + "," + (f ? 1 : 0), now = performance.now();
+    if (k === this.last || (!force && now - this.lastT < 100)) return;
+    this.last = k; this.lastT = now;
+    this.send({ t: "m", x: Math.round(x), y: Math.round(y), f: f ? 1 : 0 });
+  },
+  enter(map) { this.room = null; this.last = null; this.send({ t: "j", map }); },
+  travel(to) { this.room = null; this.last = null; this.send({ t: "go", to }); },
+  scene() { const g = PC.game; return g && g.scene.getScene("city"); },
+  handle(m) {
+    const sc = this.scene(), on = sc && sc.live && sc.ready && !sc.leaving;
+    switch (m.t) {
+      case "hi": {
+        const first = !this.up && this.onHi;
+        this.up = true; this.retry = 0; this.token = m.token || this.token; this.wallet = m.wallet || this.wallet;
+        Object.assign(state, { tier: TIERS[m.level] || TIERS.none, explorer: !m.canOpen, xp: m.xp, opened: m.opened, found: m.found });
+        this.online = m.online;
+        if (m.err && this.profile.auth && !m.wallet) feed("Wallet check expired. Leave and connect again to open boxes.");
+        if (first) { const f = this.onHi; this.onHi = null; f(m); }
+        else if (sc && sc.live) { feed("Reconnected."); this.enter(sc.mapKey); updateHud(); }
+        break;
+      }
+      case "room":
+        this.room = m;
+        if (sc && sc.live && sc.ready && !sc.leaving) { if (m.map === sc.mapKey) sc.applyRoom(m); else sc.scene.restart({ map: m.map, keepRoom: true }); }
+        break;
+      case "u": if (on) sc.netMoves(m.u); break;
+      case "j": if (on) sc.addOther(m.p); break;
+      case "l": if (on) sc.removeOther(m.id); break;
+      case "k": if (on) sc.lookOther(m); break;
+      case "b": if (on) sc.addBox(m.x, m.y, m.id); break;
+      case "g": if (on) sc.boxGone(m.id); break;
+      case "pos": if (on) sc.correct(m.x, m.y); break;
+      case "L": if (on) sc.lockStart(m); break;
+      case "O": if (on) sc.lockResult(m); break;
+      case "X": if (on) sc.lockMiss(m.id); break;
+      case "D": if (sc) sc.denied(m); break;
+      case "W": if (m.wallet !== this.wallet) announceWin(m.who, m.amount, m.district, false); break;
+      case "B": this.board = m.rows || []; this.online = m.online; updateHud(); break;
+      case "me":
+        if (m.level) state.tier = TIERS[m.level] || TIERS.none;
+        if (m.canOpen !== undefined) state.explorer = !m.canOpen;
+        updateHud(); break;
+      case "pi": this.send({ t: "po", s: m.s }); break;
+      case "bye": feed(m.msg); break;
+    }
+  },
+};
 
 // ================= XP, TEXTURES, TRAILS =================
 // Box XP before the NFT multiplier: mostly 5-14, 20+ is rare (4%)
@@ -1550,8 +1752,8 @@ const TRAILS = {
   } },
   // glowing circuit traces drawn on the ground behind it
   Robot: { every: 60, spawn: (s, p, i) => {
-    const last = s.robotLast, x = Math.round(p.x), y = Math.round(p.y);
-    s.robotLast = { x, y };
+    const last = p.robotLast, x = Math.round(p.x), y = Math.round(p.y);
+    p.robotLast = { x, y };
     if (!last || Math.hypot(x - last.x, y - last.y) > 24) return;
     const glow = (X, Y, w, h, c) => { const r = s.add.rectangle(X, Y, w, h, c).setOrigin(0).setDepth(2); s.tweens.add({ targets: r, alpha: 0, delay: 500, duration: 700, onComplete: () => r.destroy() }); };
     glow(Math.min(last.x, x), last.y, Math.abs(x - last.x) + 1, 1, 0x4ae8ff);
@@ -1583,8 +1785,11 @@ const TRAILS = {
 
 // ================= LOCK MINI-GAME =================
 let lockState = null;
-function openLock(scene, box) {
-  lockState = { scene, box, pos: 0, dir: 1, speed: 0.5 + Math.random() * 0.15, zone: newZone(0.3) };
+// the needle bounces 0 → 1 → 0 at `speed` bar-widths per second; online the server sends zone and speed
+// and checks the moment you hit against the same formula
+const needleAt = (speed, ms) => { const u = (speed * ms / 1000) % 2; return u <= 1 ? u : 2 - u; };
+function openLock(scene, box, srv) {
+  lockState = { scene, box, pos: 0, t0: performance.now(), speed: srv ? srv.speed : 0.5 + Math.random() * 0.15, zone: srv ? srv.zone : newZone(0.3), online: !!srv };
   $("lock").hidden = false; renderLock(); $("lockmsg").textContent = "Hit E, Space or OPEN when the needle is in the gold zone";
 }
 function newZone(w) { const a = 0.1 + Math.random() * (0.8 - w); return [a, a + w]; }
@@ -1593,13 +1798,21 @@ function renderLock() {
   $("zone").style.left = s.zone[0] * 100 + "%"; $("zone").style.width = (s.zone[1] - s.zone[0]) * 100 + "%";
   $("needle").style.left = s.pos * 100 + "%";
 }
-function lockTick(dt) {
-  const s = lockState; s.pos += s.dir * s.speed * dt / 1000;
-  if (s.pos > 1) { s.pos = 1; s.dir = -1; } if (s.pos < 0) { s.pos = 0; s.dir = 1; }
+function lockTick() {
+  const s = lockState; if (s.waiting) return;
+  s.pos = needleAt(s.speed, performance.now() - s.t0);
   renderLock();
 }
 function lockHit() {
-  const s = lockState; if (!s) return;
+  const s = lockState; if (!s || s.waiting) return;
+  if (s.online) {
+    // the server decides; the needle stops while it answers
+    const e = performance.now() - s.t0; s.pos = needleAt(s.speed, e); renderLock();
+    s.waiting = true; $("lockmsg").textContent = "…";
+    NET.send({ t: "h", id: s.box.id, e: Math.round(e) });
+    setTimeout(() => { if (lockState === s) closeLock("No answer from the server. Try again.", "#ff8a8a"); }, 6000);
+    return;
+  }
   if (s.pos >= s.zone[0] && s.pos <= s.zone[1]) {
     const { scene, box } = s; closeLock(); scene.finishOpen(box);
   } else {
@@ -1616,9 +1829,16 @@ function updateHud() {
   const tr = state.tier; $("tier").innerHTML = state.explorer && tr === TIERS.none ? `<span style="color:${tr.color}">EXPLORER</span> · CAN'T OPEN BOXES` : `<span style="color:${tr.color}">${tr.label === "No NFT" ? "HOLDER" : tr.label.toUpperCase()}</span> · XP x${tr.xp} · SPD +${Math.round((tr.speed - 1) * 100)}%`;
   $("lv").textContent = level(); $("xp").textContent = state.xp; $("xpbar").style.width = (state.xp % 100) + "%";
   $("opened").textContent = state.opened; $("found").textContent = state.found.toLocaleString("en-US");
-  const rows = BOARD.map(([n, x]) => ({ n, x })).concat([{ n: "YOU", x: state.xp, me: true }]).sort((a, b) => b.x - a.x);
-  $("rows").innerHTML = rows.slice(0, 6).map((r, i) =>
-    `<li class="${r.me ? "me" : ""}"><span>${i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1 + "."} ${r.n}</span><span>${r.x}</span></li>`).join("");
+  let rows;
+  if (NET.live) {
+    // live board from the server: top players by XP, you highlighted (or added under it)
+    rows = NET.board.map(r => ({ n: r.name, x: r.w === NET.wallet ? Math.max(r.xp, state.xp) : r.xp, me: r.w === NET.wallet }));
+    rows.sort((a, b) => b.x - a.x); rows = rows.slice(0, 6);
+    if (!rows.some(r => r.me)) rows.push({ n: "YOU", x: state.xp, me: true, rank: "–" });
+    const tag = $("board").querySelector(".tag"); if (tag) tag.textContent = "Top 3 win prizes · " + NET.online + " online";
+  } else rows = BOARD.map(([n, x]) => ({ n, x })).concat([{ n: "YOU", x: state.xp, me: true }]).sort((a, b) => b.x - a.x).slice(0, 6);
+  $("rows").innerHTML = rows.map((r, i) =>
+    `<li class="${r.me ? "me" : ""}"><span>${r.rank || (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1 + ".")} ${esc(r.n)}</span><span>${r.x}</span></li>`).join("");
 }
 let toastTimer;
 function toast(s, color) { const t = $("toast"); t.textContent = s; t.style.color = color; t.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.opacity = 0, 1800); }
@@ -1695,25 +1915,31 @@ const PC = {
   },
   async play(profile) {
     await this.loadSprite(profile);
-    Object.assign(state, { char: profile.name, tex: profile.tex || "p_Explorer", tier: TIERS[profile.tier] || TIERS.none, explorer: !profile.canOpen, trail: profile.trail || null });
+    Object.assign(state, { char: profile.name, tex: profile.tex || "p_Explorer", tier: TIERS[profile.tier] || TIERS.none, explorer: !profile.canOpen, trail: profile.trail || null, xp: 0, opened: 0, found: 0 });
+    // join the multiplayer server when there is one; it decides level, box access and XP from here on
+    feed("Connecting…");
+    const hi = await NET.start(profile);
+    NET.live = !!hi;
     ["stats", "mapbox", "board", "help", "ingame"].forEach(id => $(id).hidden = false);
     $("help").textContent = "WASD / arrows, or hold / drag to move · stand by a box and press E · M opens the map · walk into a black hole to travel";
-    $("board").querySelector(".tag").textContent = BOARD.length ? "Top 3 win prizes · demo names" : "Top 3 win prizes · live board at launch";
+    $("board").querySelector(".tag").textContent = NET.live ? "Top 3 win prizes · " + NET.online + " online" : BOARD.length ? "Top 3 win prizes · demo names" : "Top 3 win prizes · live board at launch";
     this.game.scene.getScene("city").scene.restart({ map: "downtown" });
     updateHud(); setTimeout(placeWins, 50);
+    if (hi) for (const w of (hi.wins || []).slice().reverse()) announceWin(w.who, w.amount, w.district, false);
     setTimeout(() => feed(state.explorer ? "Explorer mode: look around freely. Holders can open boxes." : "Welcome to Pumpers City. Boxes glow gold."), 800);
-    if (window.PC_DEMO && !this.demoWins) { this.demoWins = true; const demoWin = () => { announceWin(pick(DEMO_NAMES), PRIZE, pick(["DOWNTOWN", "VOLCANO ISLAND", "HARBOR"])); setTimeout(demoWin, 40000 + Math.random() * 50000); }; setTimeout(demoWin, 9000); }
+    if (window.PC_DEMO && !NET.live && !this.demoWins) { this.demoWins = true; const demoWin = () => { announceWin(pick(DEMO_NAMES), PRIZE, pick(["DOWNTOWN", "VOLCANO ISLAND", "HARBOR"])); setTimeout(demoWin, 40000 + Math.random() * 50000); }; setTimeout(demoWin, 9000); }
   },
   // swap the player's look (and trail) in place; level and box access stay the same
   async setCharacter(profile) {
     await this.loadSprite(profile);
     state.char = profile.name; state.tex = profile.tex || state.tex; state.trail = profile.trail || null;
+    if (NET.live) { NET.profile = { ...NET.profile, ...profile }; NET.send({ t: "look", skin: NET.skinOf(profile) }); }
     const sc = this.game.scene.getScene("city");
     if (sc && sc.player && !sc.attract) { sc.player.setTexture(upTex(sc, state.tex)); sc.burst(sc.player.x, sc.player.y - 10, 0xb07aff, 18); }
     feed("You are now playing as " + profile.name + ".");
   },
   leave() {
-    closeLock(); toggleBigMap(false);
+    closeLock(); toggleBigMap(false); NET.stop();
     ["stats", "mapbox", "board", "help", "ingame"].forEach(id => $(id).hidden = true);
     this.game.scene.getScene("city").scene.restart({ attract: true });
   },

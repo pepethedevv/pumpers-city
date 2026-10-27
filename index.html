@@ -74,6 +74,7 @@
     <div class="chips" id="facts">
       <span>7 DISTRICTS</span><span>REAL $PUMP PRIZES</span><span>3,333 NFTS</span>
     </div>
+    <div class="livebar" id="livebar" hidden><i></i><span><b id="liveOnline">0</b> ONLINE</span><span id="liveWonBox" hidden>· <b id="liveWon">0</b> $PUMP WON</span><button type="button" class="link" id="winnersBtn" hidden>WINNERS →</button></div>
     <div class="ca" id="ca" hidden><span>CA</span><code id="caval"></code><button type="button" id="cacopy">COPY</button></div>
     <button type="button" class="link under" data-open-guide>Read how it works →</button>
   </main>
@@ -98,6 +99,16 @@
     <div id="accessBody"></div>
     <div id="nftPick" class="nftpick"></div>
     <button type="button" class="btn gold wide" id="enter">ENTER THE CITY</button>
+  </div>
+</div>
+
+<!-- ============ RECENT WINNERS ============ -->
+<div class="modal" id="winnersModal" hidden>
+  <div class="sheet">
+    <button type="button" class="close" data-close aria-label="Close">×</button>
+    <h2>RECENT WINNERS</h2>
+    <p class="muted">Every prize is paid on-chain. Tap a paid prize to see it on Solscan.</p>
+    <div id="winnersList" class="plist"></div>
   </div>
 </div>
 

@@ -1,0 +1,12 @@
+{
+  "name": "pumpers-city-server",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node server.mjs" },
+  "dependencies": {
+    "bs58": "6.0.0",
+    "tweetnacl": "1.0.3",
+    "ws": "8.18.3"
+  }
+}

@@ -213,3 +213,11 @@ details p { margin: 10px 0 0 !important; color: #d6cfe8; }
   #help { display: none; }
   #feed { bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* live counter on the landing page */
+.livebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 8px; font: 8px var(--pixel); color: var(--muted); }
+.livebar b { color: var(--fg); font-weight: 400; }
+.livebar #liveWonBox b { color: var(--gold); }
+.livebar > i { width: 7px; height: 7px; border-radius: 50%; background: #5ae08a; box-shadow: 0 0 6px #5ae08a; animation: livepulse 1.6s ease-in-out infinite; }
+.livebar .link { font: 8px var(--pixel); }
+@keyframes livepulse { 50% { opacity: .35; } }

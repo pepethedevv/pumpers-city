@@ -105,7 +105,7 @@
         data = { offline: true, wallet: pk };
       }
       show("walletModal", false);
-      walletCtx = { pk, provider, name: w.name };
+      walletCtx = { pk, provider, name: w.name, auth: { wallet: pk, message, signature: b64(new Uint8Array(sig)) } };
       showPass(data, pk);
     } catch (e) {
       msg.textContent = e?.message?.includes("User rejected") ? "Request was cancelled in the wallet." : "Couldn't connect: " + (e?.message || e);
@@ -133,6 +133,7 @@
       tier: d.live ? a.level : "none",
       canOpen: !!(d.live && a.canOpen),
       trail: d.live ? (n?.oneofone || (a.trail ? "whale" : null)) : null,
+      auth: walletCtx && walletCtx.auth,
     };
   }
   function renderPicker(nfts) {
@@ -147,7 +148,7 @@
     btns.forEach((b, i) => thumb(sorted[i], b.querySelector("canvas")));
     const select = i => { chosen = sorted[i]; btns.forEach((b, j) => b.classList.toggle("sel", j === i)); };
     btns.forEach((b, i) => b.addEventListener("click", () => select(i)));
-    const cur = chosen && sorted.findIndex(n => n.number === chosen.number && n.oneofone === chosen.oneofone);
+    const cur = chosen ? sorted.findIndex(n => n.number === chosen.number && n.oneofone === chosen.oneofone) : -1;
     select(cur >= 0 ? cur : 0);
   }
   function showPass(d, pk) {
@@ -239,4 +240,28 @@
     renderPrizes();
   });
   setInterval(() => { if (!$("prizesBtn").hidden) refreshPrizes(); }, 60000);
+
+  // ---------- live counter + recent winners (from the game server) ----------
+  let winners = [];
+  const statusUrl = () => { const u = (new URLSearchParams(location.search).get("server") || cfg.GAME_SERVER || "").replace(/^ws/, "http"); return u ? u.replace(/\/$/, "") + "/status" : ""; };
+  const ago = s => { const m = Math.max(0, Math.round((Date.now() - Date.parse(s)) / 60000)); return m < 1 ? "just now" : m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; };
+  async function liveStatus() {
+    const u = statusUrl(); if (!u) return;
+    try {
+      const j = await (await fetch(u, { cache: "no-store" })).json();
+      $("liveOnline").textContent = fmt(j.online || 0);
+      $("liveWon").textContent = fmt(j.won || 0); show("liveWonBox", j.won > 0);
+      winners = j.recent || []; show("winnersBtn", winners.length > 0);
+      $("liveOnline").parentElement.hidden = !(j.online > 0);
+      show("livebar", j.online > 0 || j.won > 0);
+    } catch { show("livebar", false); }
+  }
+  $("winnersBtn").addEventListener("click", () => {
+    $("winnersList").innerHTML = winners.map(w => {
+      const amt = fmt(w.amount) + " $PUMP", inner = `<span class="amt">${amt}</span><div class="act">${w.sig ? `<a href="https://solscan.io/tx/${encodeURIComponent(w.sig)}" target="_blank" rel="noopener">Solscan</a>` : `<span class="st wait">CLAIMABLE</span>`}</div><span class="meta">${esc(w.who)} · ${esc(w.district || "")} · ${ago(w.at)}</span>`;
+      return `<div class="prow">${inner}</div>`;
+    }).join("") || `<div class="pempty">No winners yet. Be the first.</div>`;
+    show("winnersModal");
+  });
+  liveStatus(); setInterval(() => { if (!$("gate").hidden) liveStatus(); }, 30000);
 })();

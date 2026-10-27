@@ -4,6 +4,7 @@ window.PC_CONFIG = {
   CA: "",             // $PUMPERS contract address, shown on the landing page with a copy button
   MINT_URL: "",       // LaunchMyNFT mint page link; a MINT button appears on the landing page when set
   API: "/api/access", // wallet check endpoint (Vercel function in /api)
+  GAME_SERVER: "",    // multiplayer server, e.g. "wss://pumpers-city-server.up.railway.app". Empty = single player
 };
 // Test mode: add ?demo=1 to the address to try every level and trail before launch
 window.PC_DEMO = new URLSearchParams(location.search).has("demo");

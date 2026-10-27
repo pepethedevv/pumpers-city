@@ -56,7 +56,7 @@ export const verifyLogin = (wallet, message, sig, host) => verifySigned("login",
 export const hostOf = req => req.headers["x-forwarded-host"] || req.headers.host;
 
 // ---------- Helius ----------
-export const rpcUrl = () => `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`;
+export const rpcUrl = () => process.env.HELIUS_RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`;
 export async function rpc(method, params) {
   const r = await fetch(rpcUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
   const j = await r.json();
