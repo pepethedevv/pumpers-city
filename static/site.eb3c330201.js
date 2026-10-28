@@ -3,7 +3,7 @@
   // these come from game.js; if it failed to load (blocked script, bad network) the page must still work
   const $ = window.$ || (id => document.getElementById(id));
   const esc = window.esc || (s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]));
-  const TIERS = window.TIERS || { none: { label: "No NFT", speed: 1, xp: 1, color: "#a99cc8" }, common: { label: "Common", speed: 1.05, xp: 1.2, color: "#d8d2e4" }, rare: { label: "Rare", speed: 1.1, xp: 1.4, color: "#5aaaff" }, epic: { label: "Epic", speed: 1.15, xp: 1.6, color: "#c07aff" }, legendary: { label: "Legendary", speed: 1.22, xp: 1.8, color: "#ffd667" }, oneofone: { label: "1/1", speed: 1.3, xp: 2, color: "#ff5aa0" } };
+  const TIERS = window.TIERS || { none: { label: "No NFT", speed: 1, xp: 1, color: "#a99cc8" }, common: { label: "Common", speed: 1.05, xp: 1.2, color: "#d8d2e4" }, rare: { label: "Rare", speed: 1.1, xp: 1.4, color: "#5aaaff" }, epic: { label: "Epic", speed: 1.15, xp: 1.6, color: "#c07aff" }, legendary: { label: "Legendary", speed: 1.22, xp: 1.8, color: "#ffd667" }, oneofone: { label: "Mythic", speed: 1.3, xp: 2, color: "#ff5aa0" } };
   const gameOk = typeof window.PC !== "undefined";
   const cfg = window.PC_CONFIG || {};
   const show = (id, on = true) => { $(id).hidden = !on; };

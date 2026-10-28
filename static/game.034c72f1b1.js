@@ -1099,7 +1099,7 @@ const TIERS = {
   rare:      { label: "Rare",      speed: 1.10, xp: 1.4, color: "#5aaaff" },
   epic:      { label: "Epic",      speed: 1.15, xp: 1.6, color: "#c07aff" },
   legendary: { label: "Legendary", speed: 1.22, xp: 1.8, color: "#ffd667" },
-  oneofone:  { label: "1/1",       speed: 1.30, xp: 2.0, color: "#ff5aa0" },
+  oneofone:  { label: "Mythic",       speed: 1.30, xp: 2.0, color: "#ff5aa0" },
 };
 const ONES = ["Trencher", "Diamond", "Lava", "Ghost", "Glitch", "Robot", "Zombie", "Ice", "The Mayor", "Shadow"];
 const CHARS = [

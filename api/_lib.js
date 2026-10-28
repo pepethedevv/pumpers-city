@@ -26,7 +26,7 @@ export function decide(tokens, nfts) {
   const level = RANK[tokenLevel] >= RANK[best] ? tokenLevel : best;
   let canOpen = false, reason;
   if (tokens >= MIN_TOKENS) { canOpen = true; reason = "You hold enough $PUMPERS to open boxes."; }
-  else if (RANK[best] >= RANK.legendary) { canOpen = true; reason = `Your ${best === "oneofone" ? "1/1" : "Legendary"} NFT opens boxes without tokens.`; }
+  else if (RANK[best] >= RANK.legendary) { canOpen = true; reason = `Your ${best === "oneofone" ? "Mythic" : "Legendary"} NFT opens boxes without tokens.`; }
   else if (nfts.length >= NFTS_FOR_FREE_ACCESS) { canOpen = true; reason = `Holding ${nfts.length} Pumpers NFTs opens boxes without tokens.`; }
   else if (nfts.length && tokens >= MIN_TOKENS_WITH_NFT) { canOpen = true; reason = `Your NFT plus ${fmt(MIN_TOKENS_WITH_NFT)}+ $PUMPERS opens boxes.`; }
   else if (nfts.length) reason = `With your NFT you need ${fmt(MIN_TOKENS_WITH_NFT)} $PUMPERS to open boxes. You have ${fmt(tokens)}.`;
@@ -79,11 +79,11 @@ export async function holdings(wallet) {
         if (it.burnt || !(it.grouping || []).some(g => g.group_key === "collection" && g.group_value === coll)) continue;
         const md = it.content?.metadata || {}, attrs = md.attributes || [];
         const raw = String(attrs.find(a => /^(tier|rarity)$/i.test(a.trait_type))?.value || "common").toLowerCase();
-        const tier = raw === "1/1" || raw === "oneofone" ? "oneofone" : RANK[raw] ? raw : "common";
+        const tier = raw === "mythic" || raw === "1/1" || raw === "oneofone" ? "oneofone" : RANK[raw] ? raw : "common"; // Mythic = the 10 one-of-ones
         nfts.push({
           id: it.id, name: md.name || "Pumper", number: parseInt((md.name || "").match(/#(\d+)/)?.[1] || "0", 10), tier,
           image: it.content?.links?.image || it.content?.files?.[0]?.uri || "",
-          oneofone: tier === "oneofone" ? String(attrs.find(a => a.trait_type === "1/1")?.value || "") || null : null,
+          oneofone: tier === "oneofone" ? String(attrs.find(a => a.trait_type === "Mythic" || a.trait_type === "1/1")?.value || "") || null : null,
         });
       }
       if (r.items.length < 1000) break;
