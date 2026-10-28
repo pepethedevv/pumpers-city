@@ -434,7 +434,7 @@ async function catchSurprise(p) {
   const r = p.room, sp = r && surprise[r.map];
   if (!sp || !sp.alive || sp.heldBy !== p.id) return send(p, { t: "D", id: SURPRISE_ID, msg: "Too late, someone caught it." });
   sp.alive = false; sp.heldBy = null; sp.respawnAt = Date.now() + SURPRISE_RESPAWN;
-  const xp = Math.round((100 + Math.floor(Math.random() * 51)) * TIERS[p.acc.level].xp);
+  const xp = 100 + Math.floor(Math.random() * 51); // same for everyone: no level multiplier on the surprise pill
   if (p.s.day !== curDay) { p.s.day = curDay; p.s.dayXp = 0; }
   p.s.xp += xp; p.s.dayXp = (p.s.dayXp || 0) + xp; p.s.dirty = !!p.wallet;
   send(p, { t: "O", id: SURPRISE_ID, xp, total: p.s.xp, dayXp: p.s.dayXp, opened: p.s.opened, found: p.s.found, prize: 0 });
