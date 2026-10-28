@@ -1169,7 +1169,8 @@ class City extends Phaser.Scene {
     this.player = this.add.image(sp.x, sp.y, upTex(this, state.tex || "p_Explorer")).setOrigin(0.5, 0.9).setScale(0.25);
     this.player.shadow = this.add.image(sp.x, sp.y + 1, "shadow");
     // your own name, under your Pumper
-    this.myTag = this.attract ? null : nameTag(this, sp.x, sp.y, state.nick || "You", true);
+    this.myTag = this.attract ? null : nameTag(this, sp.x, sp.y, state.nick || "You", state.badge);
+    this.surprise = null;
     // attract mode: an invisible camera rig drifts around downtown behind the landing screen
     if (this.attract) { this.player.setVisible(false); this.player.shadow.setVisible(false); this.tour = attractTour(m); this.tourI = 0; Object.assign(this.player, this.tour[0]); sp = { ...this.tour[0] }; }
     cam.startFollow(this.player, true, 0.15, 0.15); cam.centerOn(sp.x, sp.y);
@@ -1208,6 +1209,8 @@ class City extends Phaser.Scene {
       if (lockState || this.attract) return;
       const box = this.boxes.find(b => !b.done && Phaser.Math.Distance.Between(p.worldX, p.worldY, b.x, b.y) < 14);
       if (box && Phaser.Math.Distance.Between(this.player.x, this.player.y, box.x, box.y) < 22) return this.tryOpen(box);
+      const sp = this.surprise;
+      if (sp && !sp.done && Phaser.Math.Distance.Between(p.worldX, p.worldY, sp.s.x, sp.s.y - 6) < 18 && Phaser.Math.Distance.Between(this.player.x, this.player.y, sp.s.x, sp.s.y) < 36) return this.tryOpen(sp);
       // tap = walk to that spot; hold or drag = keep walking toward your finger / cursor
       this.hold = { p, t: this.time.now };
       this.moveTarget = { x: p.worldX, y: p.worldY };
@@ -1242,6 +1245,7 @@ class City extends Phaser.Scene {
     for (const id of [...this.others.keys()]) this.removeOther(id);
     for (const b of m.boxes) this.addBox(b.x, b.y, b.id);
     for (const p of m.players) this.addOther(p);
+    this.removeSurprise(); if (m.sp) this.setSurprise(m.sp.x, m.sp.y, 0, false);
     if (Phaser.Math.Distance.Between(this.player.x, this.player.y, m.x, m.y) > 24) { this.player.setPosition(m.x, m.y); this.moveTarget = null; this.cameras.main.centerOn(m.x, m.y); }
     NET.sendPos(this.player.x, this.player.y, this.player.flipX, true);
   }
@@ -1249,7 +1253,7 @@ class City extends Phaser.Scene {
     if (this.others.has(p.id)) this.removeOther(p.id);
     const s = this.add.image(p.x, p.y, upTex(this, "p_Explorer")).setOrigin(0.5, 0.9).setScale(0.25).setFlipX(!!p.f);
     const shadow = this.add.image(p.x, p.y + 1, "shadow");
-    const label = nameTag(this, p.x, p.y, p.name, false);
+    const label = nameTag(this, p.x, p.y, p.name, p.b);
     const o = { id: p.id, s, shadow, label, tx: p.x, ty: p.y, trail: p.trail, i: 0, lastTrail: 0 };
     this.others.set(p.id, o);
     this.skinOther(o, p.skin);
@@ -1260,7 +1264,40 @@ class City extends Phaser.Scene {
     else if (skin && skin.n) { const pr = { spriteNum: skin.n }; await PC.loadSprite(pr); if (pr.tex) key = pr.tex; }
     if (this.others.get(o.id) === o && this.sys.isActive()) o.s.setTexture(upTex(this, key));
   }
-  lookOther(m) { const o = this.others.get(m.id); if (!o) return; o.label.setText(m.name); o.trail = m.trail; this.skinOther(o, m.skin); }
+  lookOther(m) { const o = this.others.get(m.id); if (!o) return; o.label.destroy(); o.label = nameTag(this, o.s.x, o.s.y, m.name, m.b); o.trail = m.trail; this.skinOther(o, m.skin); }
+  // ---------- surprise pill ----------
+  setSurprise(x, y, f, born) {
+    let sp = this.surprise;
+    if (!sp) {
+      if (!this.textures.exists("surprise")) this.textures.addCanvas("surprise", surpriseCanvas());
+      const s = this.add.image(x, y, upTex(this, "surprise")).setOrigin(0.5, 0.9).setScale(0.25);
+      const glow = this.add.circle(x, y - 8, 15, 0xff5aa0, 0.3).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: glow, scale: 1.35, alpha: 0.12, yoyo: true, repeat: -1, duration: 600 });
+      const label = this.add.text(x, y - 30, "?", { fontFamily: '"Press Start 2P"', fontSize: "8px", color: "#ffffff", stroke: "#ff5aa0", strokeThickness: 2 }).setOrigin(0.5).setResolution(6).setDepth(100000.5);
+      sp = this.surprise = { id: SURPRISE_ID, s, glow, label, tx: x, ty: y, x, y, done: false, jamUntil: 0, pill: true, hue: 0, lastFx: 0 };
+      if (born) { this.burst(x, y - 8, 0xff5aa0, 24); feed("A surprise pill appeared in " + this.m.name + "! Catch it for big XP.", true); }
+    }
+    sp.tx = x; sp.ty = y; if (f !== undefined) sp.s.setFlipX(!!f);
+  }
+  removeSurprise() { const sp = this.surprise; if (!sp) return; sp.s.destroy(); sp.glow.destroy(); sp.label.destroy(); this.surprise = null; }
+  surpriseGone(byId) {
+    const sp = this.surprise; if (!sp) return;
+    if (lockState && lockState.box === sp) closeLock("Someone else caught it first", "#a99cc8");
+    this.burst(sp.s.x, sp.s.y - 8, 0xff5aa0, 30);
+    this.removeSurprise();
+  }
+  surpriseStep(time, dt) {
+    const sp = this.surprise; if (!sp) return;
+    const s = sp.s, k = Math.min(1, dt / 110), dx = sp.tx - s.x, dy = sp.ty - s.y, d = Math.hypot(dx, dy);
+    if (d > 200) s.setPosition(sp.tx, sp.ty); else if (d > 0.3) { s.x += dx * k; s.y += dy * k; }
+    sp.x = s.x; sp.y = s.y;
+    sp.hue = (sp.hue + dt * 0.12) % 360;
+    const col = Phaser.Display.Color.HSVToRGB(sp.hue / 360, 0.55, 1).color;
+    s.setTint(col); sp.glow.setFillStyle(col, 0.3);
+    s.rotation = d > 0.5 ? Math.sin(time / 60) * 0.1 : 0;
+    s.setDepth(s.y); sp.glow.setPosition(s.x, s.y - 8).setDepth(s.y - 1); sp.label.setPosition(Math.round(s.x), Math.round(s.y - 30 + Math.sin(time / 250) * 2));
+    if (d > 0.5 && time - sp.lastFx > 90 && this.inView(s.x, s.y)) { sp.lastFx = time; fx(this, { c: col, s: 2, x: s.x + rnd(-5, 5), y: s.y - rnd(2, 14), dy: -8, dur: 600, blend: true }); }
+  }
   removeOther(id) { const o = this.others.get(id); if (!o) return; o.s.destroy(); o.shadow.destroy(); o.label.destroy(); this.others.delete(id); }
   netMoves(u) {
     for (let i = 0; i < u.length; i += 4) {
@@ -1291,18 +1328,26 @@ class City extends Phaser.Scene {
     this.time.delayedCall(900, () => this.tweens.add({ targets: [box.s, box.glow], alpha: 0, duration: 400, onComplete: () => { box.s.destroy(); box.glow.destroy(); this.boxes = this.boxes.filter(b => b !== box); } }));
   }
   lockStart(m) {
-    const box = this.boxes.find(b => b.id === m.id && !b.done);
+    const box = m.id === SURPRISE_ID ? this.surprise : this.boxes.find(b => b.id === m.id && !b.done);
     this.asking = null;
     if (!box || lockState || this.leaving) { NET.send({ t: "c" }); return; }
     openLock(this, box, m);
   }
   lockResult(m) {
-    const box = this.boxes.find(b => b.id === m.id);
     closeLock();
+    if (m.id === SURPRISE_ID) {
+      // caught it: big XP
+      const sp = this.surprise, x = sp ? sp.s.x : this.player.x, y = sp ? sp.s.y : this.player.y;
+      Object.assign(state, { xp: m.total }); this.removeSurprise();
+      this.burst(x, y - 8, 0xff5aa0, 40); this.burst(x, y - 8, 0x7fd8ff, 20); this.cameras.main.shake(200, 0.003);
+      toast("SURPRISE! +" + m.xp + " XP", "#ff9ad0"); this.floatText(x, y - 20, "+" + m.xp + " XP", "#ff9ad0"); updateHud();
+      return;
+    }
+    const box = this.boxes.find(b => b.id === m.id);
     if (box) this.finishOpen(box, m);
   }
   lockMiss(id) {
-    const box = this.boxes.find(b => b.id === id);
+    const box = id === SURPRISE_ID ? this.surprise : this.boxes.find(b => b.id === id);
     if (box) box.jamUntil = this.time.now + 2000;
     closeLock("Missed! Try again in 2 seconds.", "#ff8a8a");
   }
@@ -1406,14 +1451,16 @@ class City extends Phaser.Scene {
   nearestBox(range = 20) {
     let best = null, bd = range;
     for (const b of this.boxes) { if (b.done) continue; const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, b.x, b.y); if (d < bd) { bd = d; best = b; } }
+    const sp = this.surprise; // the surprise pill moves, so it can be caught from a bit further
+    if (sp && !sp.done) { const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, sp.x, sp.y); if (d < Math.max(bd, 30)) best = sp; }
     return best;
   }
   standing() { return this.time.now - this.lastMove > 350; }
   tryOpen(box) {
     box = box || this.nearestBox();
     if (!box || box.done || this.leaving || lockState) return;
-    if (!this.standing()) { toast("Stop next to the box to open it", "#a99cc8"); return; }
-    if (state.explorer) { toast("Hold $PUMPERS to open boxes", "#a99cc8"); feed("Explorers can look around. Holders open boxes."); return; }
+    if (!box.pill && !this.standing()) { toast("Stop next to the box to open it", "#a99cc8"); return; }
+    if (state.explorer) { toast(box.pill ? "Hold $PUMPERS to catch the surprise pill" : "Hold $PUMPERS to open boxes", "#a99cc8"); feed("Explorers can look around. Holders open boxes."); return; }
     if (box.jamUntil > this.time.now) { toast("Lock jammed. Wait a moment", "#ff8a8a"); return; }
     if (this.live) {
       // online: ask the server; it checks you are really next to the box and sends the lock back
@@ -1470,6 +1517,7 @@ class City extends Phaser.Scene {
     x.drawImage(this.miniBase, 0, 0);
     const v = this.cameras.main.worldView; x.strokeStyle = "rgba(255,255,255,.85)"; x.lineWidth = 2; x.strokeRect(v.x / T, v.y / T, v.width / T, v.height / T);
     for (const p of m.portals) { x.fillStyle = "#1a0a2a"; x.fillRect(p.x - 4, p.y - 4, 9, 9); x.fillStyle = "#c08aff"; x.fillRect(p.x - 3, p.y - 3, 7, 7); }
+    if (this.surprise && Math.floor(this.time.now / 400) % 2) { const sp = this.surprise; x.fillStyle = "#ff5aa0"; x.fillRect(Math.floor(sp.x / T) - 3, Math.floor(sp.y / T) - 3, 7, 7); }
     x.fillStyle = "#7fd8ff"; for (const o of this.others.values()) x.fillRect(Math.floor(o.s.x / T) - 2, Math.floor(o.s.y / T) - 2, 5, 5);
     const px = Math.floor(this.player.x / T), py = Math.floor(this.player.y / T);
     x.fillStyle = "#000000"; x.fillRect(px - 4, py - 4, 9, 9); x.fillStyle = "#ffffff"; x.fillRect(px - 3, py - 3, 7, 7);
@@ -1515,7 +1563,7 @@ class City extends Phaser.Scene {
     } else p.rotation = 0;
     p.setDepth(p.y); p.shadow.setPosition(p.x, p.y + 1).setDepth(p.y - 0.5);
     if (this.myTag) this.myTag.setPosition(Math.round(p.x), Math.round(p.y + 3));
-    if (this.live) { NET.sendPos(p.x, p.y, p.flipX); this.othersStep(time, dt); }
+    if (this.live) { NET.sendPos(p.x, p.y, p.flipX); this.othersStep(time, dt); this.surpriseStep(time, dt); }
 
     this.npcStep(time, dt);
     this.ringStep(time, p);
@@ -1524,8 +1572,9 @@ class City extends Phaser.Scene {
       let label = null;
       if (state.explorer) label = "LOCKED";
       else if (b.jamUntil > time) label = "JAMMED " + Math.ceil((b.jamUntil - time) / 1000) + "s";
+      else if (b.pill) label = "[E] CATCH!";
       else if (this.standing()) label = "[E] OPEN";
-      if (label) this.prompt.setPosition(b.x, b.y - 22).setText(label).setVisible(true); else this.prompt.setVisible(false);
+      if (label) this.prompt.setPosition(b.x, b.y - (b.pill ? 40 : 22)).setText(label).setVisible(true); else this.prompt.setVisible(false);
     } else this.prompt.setVisible(false);
     if (lockState) lockTick();
   }
@@ -1581,10 +1630,27 @@ function attractTour(m) {
   return [P(vx[0], hy[0]), P(vx[1], hy[0]), P(vx[1], hy[1]), P(vx[0], hy[1])];
 }
 
-// small name plate under a character
-function nameTag(scene, x, y, text, mine) {
-  return scene.add.text(Math.round(x), Math.round(y + 3), text, { fontFamily: '"Press Start 2P"', fontSize: "5px", color: mine ? "#ffe6a0" : "#ece6f8", backgroundColor: "rgba(18,14,30,0.6)", padding: { x: 2, y: 1 } })
+// small name plate under a character; badge = gold (1/1 or 20M+), silver (Legendary or 10M+), bronze (Epic or 5M+)
+const TAG_STYLE = {
+  gold:   { color: "#ffd667", backgroundColor: "rgba(70,48,4,0.82)" },
+  silver: { color: "#eef2fa", backgroundColor: "rgba(72,82,104,0.82)" },
+  bronze: { color: "#f0a868", backgroundColor: "rgba(74,36,12,0.82)" },
+  none:   { color: "#d6cee8", backgroundColor: "rgba(18,14,30,0.6)" },
+};
+function nameTag(scene, x, y, text, badge) {
+  const st = TAG_STYLE[badge] || TAG_STYLE.none;
+  return scene.add.text(Math.round(x), Math.round(y + 3), text, { fontFamily: '"Press Start 2P"', fontSize: "5px", ...st, padding: { x: 2, y: 1 } })
     .setOrigin(0.5, 0).setResolution(6).setDepth(100000.5);
+}
+// the surprise pill: a white pill that gets tinted in shifting colours
+const SURPRISE_ID = -1;
+function surpriseCanvas() {
+  const c = document.createElement("canvas"); c.width = c.height = 32; const x = c.getContext("2d");
+  x.fillStyle = "#18161e"; x.beginPath(); x.roundRect(9, 7, 14, 24, 7); x.fill();
+  x.fillStyle = "#ffffff"; x.beginPath(); x.roundRect(10, 8, 12, 22, 6); x.fill();
+  x.fillStyle = "#18161e"; x.fillRect(13, 13, 2, 2); x.fillRect(17, 13, 2, 2); x.fillRect(14, 17, 4, 1);
+  x.fillStyle = "#ffffff"; x.fillRect(12, 10, 2, 1);
+  return c;
 }
 
 // ================= MULTIPLAYER =================
@@ -1661,7 +1727,10 @@ const NET = {
         if (m.wallet && m.token) this.tokens[m.wallet] = m.token;
         Object.assign(state, { tier: TIERS[m.level] || TIERS.none, explorer: !m.canOpen, xp: m.xp, opened: m.opened, found: m.found });
         this.dayXp = m.dayXp || 0; if (m.resetHour !== undefined) this.resetHour = m.resetHour;
-        if (m.name) { state.nick = m.name; if (sc && sc.myTag) sc.myTag.setText(m.name); }
+        if (m.name) state.nick = m.name;
+        state.badge = m.b || null;
+        if (sc && sc.myTag && !sc.attract) { sc.myTag.destroy(); sc.myTag = nameTag(sc, sc.player.x, sc.player.y, state.nick, state.badge); }
+        if (!first && m.chat) chatReset(m.chat);
         this.online = m.online;
         if (m.err && this.profile.auth && !m.wallet) feed("Wallet check expired. Leave and connect again to open boxes.");
         if (first) { const f = this.onHi; this.onHi = null; f(m); }
@@ -1687,12 +1756,18 @@ const NET = {
       case "B": this.board = m.rows || []; this.online = m.online; updateHud(); break;
       case "me":
         if (m.level) state.tier = TIERS[m.level] || TIERS.none;
-        if (m.name) { state.nick = m.name; if (sc && sc.myTag) sc.myTag.setText(m.name); }
+        if (m.name) state.nick = m.name;
+        if (m.b !== undefined) state.badge = m.b;
+        if (sc && sc.myTag && !sc.attract) { sc.myTag.destroy(); sc.myTag = nameTag(sc, sc.player.x, sc.player.y, state.nick, state.badge); }
         if (m.canOpen !== undefined) state.explorer = !m.canOpen;
         updateHud(); break;
       case "pi": this.send({ t: "po", s: m.s }); break;
       case "bye": feed(m.msg); break;
       case "F": feed(m.msg, true); break;
+      case "c": chatLine(m); break;
+      case "cx": chatLine({ sys: m.msg }); break;
+      case "sp": if (on) sc.setSurprise(m.x, m.y, m.f, !!m.born); break;
+      case "sg": if (on) sc.surpriseGone(m.by); break;
       case "day": this.dayXp = 0; this.board = []; updateHud(); feed(m.msg, true); break;
     }
   },
@@ -1869,6 +1944,7 @@ function updateHud() {
   } else rows = BOARD.map(([n, x]) => ({ n, x })).concat([{ n: "YOU", x: state.xp, me: true }]).sort((a, b) => b.x - a.x).slice(0, 6);
   $("rows").innerHTML = rows.map((r, i) =>
     `<li class="${r.me ? "me" : ""}"><span>${r.rank || (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1 + ".")} ${esc(r.n)}</span><span>${r.x}</span></li>`).join("");
+  placeChat();
 }
 // "Top 3 win $PUMP · resets in 5h 12m · 34 online" (the race resets at 19:00 UTC, the server says the hour)
 function boardTag() {
@@ -1913,6 +1989,7 @@ window.addEventListener("resize", placeWins);
 // is a window (guide, modal, landing gate) open over the game?
 function uiOpen() {
   if (!$("gate").hidden || ($("guide") && !$("guide").hidden)) return true;
+  if (document.activeElement && document.activeElement.id === "chatInput") return true; // typing in the chat
   for (const m of document.querySelectorAll(".modal")) if (!m.hidden) return true;
   return false;
 }
@@ -1922,6 +1999,36 @@ window.addEventListener("keydown", e => {
   if (!["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code) || uiOpen()) return;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   if (PC.game && PC.game.scene.getScene("city")?.attract === false) e.preventDefault();
+});
+// ================= CHAT =================
+// one chat for the whole city, in the right column between the minimap and the leaderboard
+function chatLine(m) {
+  const log = $("chatLog"), d = document.createElement("div");
+  if (m.sys) { d.className = "sys"; d.textContent = m.sys; }
+  else d.innerHTML = `<span class="n ${m.b || ""}">${esc(m.n)}</span>${esc(m.x)}`;
+  const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 30;
+  log.append(d); while (log.children.length > 80) log.firstChild.remove();
+  if (atEnd) log.scrollTop = log.scrollHeight;
+}
+function chatReset(lines) { $("chatLog").innerHTML = ""; (lines || []).forEach(chatLine); $("chatLog").scrollTop = 1e9; }
+function placeChat() {
+  const c = $("chat"); if (c.hidden || innerWidth <= 640) return;
+  const top = $("mapbox").getBoundingClientRect().bottom + 12, board = $("board").getBoundingClientRect();
+  const bottom = $("board").hidden ? innerHeight - 10 : board.top - 8;
+  c.style.top = Math.round(top) + "px"; c.style.height = Math.max(90, Math.round(bottom - top)) + "px";
+}
+window.addEventListener("resize", placeChat);
+$("chatForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const v = $("chatInput").value.trim(); if (!v) { $("chatInput").blur(); return; }
+  if (!NET.live || !NET.up) { chatLine({ sys: "Chat works when you're connected to the city." }); return; }
+  NET.send({ t: "say", text: v }); $("chatInput").value = "";
+});
+$("chatInput").addEventListener("keydown", e => { if (e.key === "Escape") { e.stopPropagation(); $("chatInput").blur(); } });
+// Enter while playing jumps into the chat
+window.addEventListener("keydown", e => {
+  if (e.key !== "Enter" || uiOpen() || $("chat").hidden || /^(INPUT|TEXTAREA|BUTTON|A)$/.test(e.target.tagName)) return;
+  if (PC.game && PC.game.scene.getScene("city")?.attract === false) { e.preventDefault(); $("chatInput").focus(); }
 });
 // large map overlay
 function toggleBigMap(force) {
@@ -1968,7 +2075,7 @@ const PC = {
   },
   async play(profile) {
     await this.loadSprite(profile);
-    Object.assign(state, { nick: profile.nick || null, char: profile.name, tex: profile.tex || "p_Explorer", tier: TIERS[profile.tier] || TIERS.none, explorer: !profile.canOpen, trail: profile.trail || null, xp: 0, opened: 0, found: 0 });
+    Object.assign(state, { badge: null, nick: profile.nick || null, char: profile.name, tex: profile.tex || "p_Explorer", tier: TIERS[profile.tier] || TIERS.none, explorer: !profile.canOpen, trail: profile.trail || null, xp: 0, opened: 0, found: 0 });
     // join the multiplayer server when there is one; it decides level, box access and XP from here on
     feed("Connecting…");
     const hi = await NET.start(profile);
@@ -1976,7 +2083,10 @@ const PC = {
     // there is a game server but it can't be reached: look around only, so no XP is collected that can't be saved
     const serverDown = !hi && !!NET.url();
     if (serverDown) state.explorer = true;
-    ["stats", "mapbox", "board", "help", "ingame"].forEach(id => $(id).hidden = false);
+    ["stats", "mapbox", "board", "help", "ingame", "chat"].forEach(id => $(id).hidden = false);
+    chatReset(hi ? hi.chat : [{ sys: "Chat opens when the city server is online." }]);
+    $("chatInput").disabled = !hi; $("chatInput").placeholder = hi ? "Say something… (Enter)" : "Chat is offline";
+    setTimeout(placeChat, 60); setTimeout(placeChat, 600);
     $("help").textContent = matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: fine)").matches
       ? "Hold or drag to walk · tap a box to open it · tap the map to enlarge · walk into a black hole to travel"
       : "WASD / arrows, or hold / drag to move · stand by a box and press E · M opens the map · walk into a black hole to travel";
@@ -1999,7 +2109,8 @@ const PC = {
   },
   leave() {
     closeLock(); toggleBigMap(false); NET.stop();
-    ["stats", "mapbox", "board", "help", "ingame"].forEach(id => $(id).hidden = true);
+    ["stats", "mapbox", "board", "help", "ingame", "chat"].forEach(id => $(id).hidden = true);
+    $("chat").classList.remove("open");
     this.game.scene.getScene("city").scene.restart({ attract: true });
   },
 };

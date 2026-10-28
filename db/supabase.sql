@@ -127,3 +127,13 @@ revoke execute on function award_daily(date) from public, anon, authenticated;
 -- ================= PLAYER NAMES =================
 alter table players add column if not exists name_key text;   -- lowercase name, for "is this name taken"
 create index if not exists players_name_idx on players (name_key);
+
+-- ================= SURPRISE PILLS =================
+-- one wandering pill per district; after it is caught a new one appears 12 hours later
+create table if not exists surprise_pills (
+  map        text primary key,
+  respawn_at timestamptz,
+  caught_by  text,
+  caught_at  timestamptz
+);
+alter table surprise_pills enable row level security;

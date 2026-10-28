@@ -70,10 +70,23 @@ canvas { image-rendering: pixelated; }
 .chars img { width: 72px; height: 72px; image-rendering: pixelated; }
 .chars small { color: var(--muted); font-weight: 400; font-size: 11px; }
 .boardbtn { display: none; }
+/* chat: right column between the minimap and the leaderboard (placed by JS) */
+#chat { right: 10px; width: 210px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; pointer-events: auto; font-family: var(--body); font-size: 12px; line-height: 1.35; padding: 6px 8px; background: rgba(18, 14, 30, .78); }
+#chat[hidden] { display: none; }
+.chatlog { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; scrollbar-width: thin; }
+.chatlog div { color: #e8e2f6; }
+.chatlog .n { font-weight: 600; color: #c9bfe4; margin-right: 4px; }
+.chatlog .sys { color: var(--muted); font-style: italic; }
+.n.gold { color: #ffd667; } .n.silver { color: #dfe6f2; } .n.bronze { color: #e8a060; }
+#chatInput { width: 100%; box-sizing: border-box; padding: 6px 7px; font: 12px var(--body); color: var(--fg); background: #0c0a14; border: 1px solid var(--line); border-radius: 3px; outline: none; }
+#chatInput:focus { border-color: var(--gold); }
+#chatInput:disabled { opacity: .5; }
 @media (max-width: 640px) {
   #board { display: none; }
   #board.open { display: block; right: 10px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); z-index: 6; pointer-events: auto; }
   .boardbtn { display: inline-block; }
+  #chat { display: none; }
+  #chat.open { display: flex; left: 10px; right: 10px; width: auto; top: auto !important; bottom: calc(52px + env(safe-area-inset-bottom, 0px)) !important; height: 42vh; z-index: 7; }
   #minimap { width: 100px; }
   #stats { min-width: 150px; font-size: 8px; }
   #banner { font-size: 14px; }

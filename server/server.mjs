@@ -161,7 +161,10 @@ function refillPrizes() {
 const send = (p, msg) => { if (p.ws.readyState === 1) p.ws.send(JSON.stringify(msg)); };
 const roomSend = (r, msg, except) => { const s = JSON.stringify(msg); for (const p of r.players) if (p !== except && p.ws.readyState === 1) p.ws.send(s); };
 const allSend = msg => { const s = JSON.stringify(msg); for (const p of players.values()) if (p.room && p.ws.readyState === 1) p.ws.send(s); };
-const pub = p => ({ id: p.id, name: p.name, skin: p.skin, trail: p.trail, x: Math.round(p.x), y: Math.round(p.y), f: p.f ? 1 : 0 });
+// name colour: gold = 20M+ tokens or a 1/1, silver = 10M+ or Legendary, bronze = 5M+ or Epic (same as the level)
+const BADGE = { oneofone: "gold", legendary: "silver", epic: "bronze" };
+const badge = p => BADGE[p.acc.level] || null;
+const pub = p => ({ id: p.id, name: p.name, b: badge(p), skin: p.skin, trail: p.trail, x: Math.round(p.x), y: Math.round(p.y), f: p.f ? 1 : 0 });
 
 function joinRoom(p, mapKey, at) {
   if (p.room) leaveRoom(p);
@@ -171,10 +174,12 @@ function joinRoom(p, mapKey, at) {
   roomSend(r, { t: "j", p: pub(p) }, p);
   const others = [...r.players].filter(o => o !== p).map(pub);
   for (const o of r.players) if (o !== p) p.seen.set(o.id, o.x + "," + o.y + "," + o.f);
-  send(p, { t: "room", map: mapKey, ch: r.ch, you: p.id, x: p.x, y: p.y, players: others, boxes: [...r.boxes.values()] });
+  const sp = surprise[mapKey];
+  send(p, { t: "room", map: mapKey, ch: r.ch, you: p.id, x: p.x, y: p.y, players: others, boxes: [...r.boxes.values()], sp: sp.alive ? { x: Math.round(sp.x), y: Math.round(sp.y) } : null });
 }
 function leaveRoom(p) {
   const r = p.room; if (!r) return;
+  if (p.lock?.id === SURPRISE_ID) releaseSurprise(p);
   r.players.delete(p); p.room = null; p.lock = null;
   roomSend(r, { t: "l", id: p.id });
   for (const o of r.players) o.seen.delete(p.id);
@@ -253,13 +258,14 @@ async function hello(p, msg) {
   applyLook(p, msg.skin);
   p.ready = true;
   send(p, { t: "hi", id: p.id, token: wallet ? token(wallet) : null, wallet, err, name: p.name, level: p.acc.level, canOpen: p.acc.canOpen,
-    resetHour: RESET_HOUR, xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
+    resetHour: RESET_HOUR, b: badge(p), chat: chatLog.slice(-30), xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
     wins: stats.recent.filter(w => Date.now() - Date.parse(w.at) < 300_000).slice(0, 3) });
   sendBoard(p);
 }
 
 // ---------------- boxes ----------------
 async function openBox(p, id) {
+  if (id === SURPRISE_ID) return openSurprise(p);
   const r = p.room, b = r?.boxes.get(id), now = Date.now();
   const no = (msg, extra) => send(p, { t: "D", id, msg, ...extra });
   if (!b) return no("Too late, that box is gone.");
@@ -284,7 +290,8 @@ async function hitLock(p, id, e) {
   const plausible = Number.isFinite(e) && e >= 150 && e <= E + 60 && e >= E - (p.rtt || 200) - 3000;
   const pos = needle(L.speed, e);
   if (env.DEBUG) log("hit", { e, E, rtt: p.rtt, pos, zone: L.zone });
-  if (!plausible || pos < L.zone[0] - 0.03 || pos > L.zone[1] + 0.03) { p.jam.set(id, now + JAM_MS); return send(p, { t: "X", id }); }
+  if (!plausible || pos < L.zone[0] - 0.03 || pos > L.zone[1] + 0.03) { p.jam.set(id, now + JAM_MS); if (id === SURPRISE_ID) releaseSurprise(p); return send(p, { t: "X", id }); }
+  if (id === SURPRISE_ID) return catchSurprise(p);
   const b = r.boxes.get(id);
   if (!b) return send(p, { t: "D", id, msg: "Someone else got that one." });
   if (dist(p, b) > 40) return send(p, { t: "D", id, msg: "You moved away from the box." });
@@ -357,6 +364,7 @@ function travel(p, to) {
   joinRoom(p, to, arrival(getMap(to), r.map));
 }
 function tick() {
+  stepSurprises();
   for (const r of rooms.values()) {
     if (!r.players.size) { if (r.empty && Date.now() - r.empty > 120_000) dropRoom(r); continue; }
     for (const me of r.players) {
@@ -369,6 +377,97 @@ function tick() {
       if (u.length) send(me, { t: "u", u });
     }
   }
+}
+
+// ---------------- surprise pills: one per district, wandering around ----------------
+// Catch it, pick its lock, get a big XP boost. A new one appears in that district 12 hours later.
+const SURPRISE_ID = -1, SURPRISE_RESPAWN = 12 * 3600_000, SURPRISE_SPEED = 0.075; // px per ms (players walk 0.11+)
+const surprise = {};
+for (const k of MAPKEYS) surprise[k] = { map: k, alive: false, x: 0, y: 0, goal: null, respawnAt: 0, heldBy: null, heldUntil: 0, sent: "" };
+const pillSend = (map, msg) => { const s = JSON.stringify(msg); for (const r of rooms.values()) if (r.map === map) for (const p of r.players) if (p.ws.readyState === 1) p.ws.send(s); };
+function spawnSurprise(sp) {
+  const m = getMap(sp.map), c = { x: m.spawn.x * T + 8, y: m.spawn.y * T + 8 };
+  let at = randomWalkable(m);
+  for (let k = 0; k < 30 && Math.hypot(at.x - c.x, at.y - c.y) < 400; k++) at = randomWalkable(m); // not right at the entrance
+  Object.assign(sp, { alive: true, x: at.x, y: at.y, goal: null, heldBy: null, sent: "" });
+  pillSend(sp.map, { t: "sp", x: Math.round(sp.x), y: Math.round(sp.y), born: 1 });
+  log("surprise pill in", MAP_NAMES[sp.map]);
+}
+function stepSurprises() {
+  const now = Date.now();
+  for (const sp of Object.values(surprise)) {
+    if (!sp.alive) { if (sp.respawnAt <= now && surpriseLoaded) spawnSurprise(sp); continue; }
+    if (sp.heldBy && sp.heldUntil > now) continue; // someone is picking its lock: it holds still
+    sp.heldBy = null;
+    const m = getMap(sp.map);
+    if (!sp.goal || Math.hypot(sp.goal.x - sp.x, sp.goal.y - sp.y) < 4) {
+      let g = randomWalkable(m);
+      for (let k = 0; k < 20 && Math.hypot(g.x - sp.x, g.y - sp.y) > 260; k++) g = randomWalkable(m); // short hops
+      sp.goal = g;
+    }
+    const dx = sp.goal.x - sp.x, dy = sp.goal.y - sp.y, d = Math.hypot(dx, dy), st = Math.min(d, SURPRISE_SPEED * TICK_MS);
+    const nx = sp.x + dx / d * st, ny = sp.y + dy / d * st;
+    if (!blocked(m, nx, ny)) { sp.x = nx; sp.y = ny; }
+    else if (!blocked(m, nx, sp.y)) sp.x = nx;
+    else if (!blocked(m, sp.x, ny)) sp.y = ny;
+    else sp.goal = null;
+    const k = Math.round(sp.x) + "," + Math.round(sp.y);
+    if (k !== sp.sent) { sp.sent = k; pillSend(sp.map, { t: "sp", x: Math.round(sp.x), y: Math.round(sp.y), f: dx < 0 ? 1 : 0 }); }
+  }
+}
+function releaseSurprise(p) { const sp = p.room && surprise[p.room.map]; if (sp && sp.heldBy === p.id) sp.heldBy = null; }
+function openSurprise(p) {
+  const r = p.room, sp = r && surprise[r.map], now = Date.now();
+  const no = msg => send(p, { t: "D", id: SURPRISE_ID, msg });
+  if (!sp || !sp.alive) return no("Too late, someone caught it.");
+  if (!p.acc.canOpen) return no("Hold $PUMPERS to catch the surprise pill");
+  if (!settings.boxes_open) return no("Boxes open at launch");
+  if (Math.hypot(p.x - sp.x, p.y - sp.y) > 40) return no("Get closer to catch it");
+  if (sp.heldBy && sp.heldBy !== p.id && sp.heldUntil > now) return no("Someone else is catching it");
+  if ((p.jam.get(SURPRISE_ID) || 0) > now) return no("Lock jammed. Wait a moment");
+  sp.heldBy = p.id; sp.heldUntil = now + 10_000;
+  const w = 0.24, a = 0.1 + Math.random() * (0.8 - w); // a little harder than a box
+  p.lock = { id: SURPRISE_ID, zone: [a, a + w], speed: 0.6 + Math.random() * 0.15, t0: now };
+  send(p, { t: "L", id: SURPRISE_ID, zone: p.lock.zone, speed: p.lock.speed });
+}
+async function catchSurprise(p) {
+  const r = p.room, sp = r && surprise[r.map];
+  if (!sp || !sp.alive || sp.heldBy !== p.id) return send(p, { t: "D", id: SURPRISE_ID, msg: "Too late, someone caught it." });
+  sp.alive = false; sp.heldBy = null; sp.respawnAt = Date.now() + SURPRISE_RESPAWN;
+  const xp = Math.round((100 + Math.floor(Math.random() * 51)) * TIERS[p.acc.level].xp);
+  if (p.s.day !== curDay) { p.s.day = curDay; p.s.dayXp = 0; }
+  p.s.xp += xp; p.s.dayXp = (p.s.dayXp || 0) + xp; p.s.dirty = !!p.wallet;
+  send(p, { t: "O", id: SURPRISE_ID, xp, total: p.s.xp, dayXp: p.s.dayXp, opened: p.s.opened, found: p.s.found, prize: 0 });
+  pillSend(r.map, { t: "sg", by: p.id });
+  allSend({ t: "F", msg: `${p.name} caught the surprise pill in ${MAP_NAMES[r.map]}! +${xp} XP` });
+  log("surprise caught", MAP_NAMES[r.map], p.name, xp);
+  if (dbReady()) db("surprise_pills?on_conflict=map", { method: "POST", prefer: "resolution=merge-duplicates", body: [{ map: r.map, respawn_at: new Date(sp.respawnAt).toISOString(), caught_by: p.wallet || null, caught_at: new Date().toISOString() }] }).catch(e => log("save pill:", e.message));
+}
+// after a restart, pills that were caught less than 12 hours ago stay away until their time
+let surpriseLoaded = false;
+async function loadSurprises() {
+  if (dbReady()) try { for (const row of await db("surprise_pills?select=map,respawn_at")) if (surprise[row.map]) surprise[row.map].respawnAt = Date.parse(row.respawn_at) || 0; } catch (e) { log("load pills:", e.message); }
+  surpriseLoaded = true;
+}
+
+// ---------------- chat ----------------
+// One chat for the whole city. No links and no wallet / contract addresses (the usual scam bait).
+const chatLog = [];
+const LINK = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|io|xyz|net|org|app|fun|gg|co|me|link|site|online|top|live|tk|ru|cc)\b|t\.me|discord\.gg)/i;
+const ADDRESS = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/;
+function say(p, text) {
+  const now = Date.now(), gap = p.wallet ? 1500 : 4000;
+  text = String(text || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 140);
+  if (!text || !p.nick && !p.wallet) return;
+  const no = msg => send(p, { t: "cx", msg });
+  if (now - (p.lastSay || 0) < gap) return no("Slow down a little.");
+  if (LINK.test(text)) return no("Links aren't allowed in chat.");
+  if (ADDRESS.test(text)) return no("Wallet and contract addresses aren't allowed in chat.");
+  if (text === p.lastText) return no("You just said that.");
+  p.lastSay = now; p.lastText = text;
+  const msg = { t: "c", n: p.name, b: badge(p), x: text, at: now };
+  chatLog.push(msg); if (chatLog.length > 60) chatLog.shift();
+  allSend(msg);
 }
 
 // ---------------- connections ----------------
@@ -411,8 +510,9 @@ wss.on("connection", (ws, req) => {
         case "go": travel(p, m.to); break;
         case "o": openBox(p, m.id | 0); break;
         case "h": await hitLock(p, m.id | 0, m.e); break;
-        case "c": p.lock = null; break;
-        case "look": applyLook(p, m.skin); if (p.room) roomSend(p.room, { t: "k", id: p.id, name: p.name, skin: p.skin, trail: p.trail }, p); send(p, { t: "me", name: p.name, trail: p.trail }); break;
+        case "c": if (p.lock?.id === SURPRISE_ID) releaseSurprise(p); p.lock = null; break;
+        case "say": say(p, m.text); break;
+        case "look": applyLook(p, m.skin); if (p.room) roomSend(p.room, { t: "k", id: p.id, name: p.name, b: badge(p), skin: p.skin, trail: p.trail }, p); send(p, { t: "me", name: p.name, trail: p.trail }); break;
         case "po": if (p.pingAt && m.s === p.pingAt) p.rtt = Math.min(2000, now - p.pingAt); break;
       }
     } catch (e) { log("msg error:", e.message); }
@@ -434,7 +534,7 @@ setInterval(async () => {
   for (const p of players.values()) if (p.wallet && p.ready && !(DEV && p.dev)) {
     const before = p.acc.canOpen + p.acc.level;
     try { await access(p, true); } catch { continue; }
-    if (before !== p.acc.canOpen + p.acc.level) { const s = p.skin; applyLook(p, s); send(p, { t: "me", level: p.acc.level, canOpen: p.acc.canOpen, name: p.name, trail: p.trail }); }
+    if (before !== p.acc.canOpen + p.acc.level) { const s = p.skin; applyLook(p, s); send(p, { t: "me", level: p.acc.level, canOpen: p.acc.canOpen, name: p.name, b: badge(p), trail: p.trail }); if (p.room) roomSend(p.room, { t: "k", id: p.id, name: p.name, b: badge(p), skin: p.skin, trail: p.trail }, p); }
   }
 }, 300_000);
 process.on("SIGTERM", async () => { await saveXp(); process.exit(0); });
@@ -468,7 +568,7 @@ setInterval(async () => {
   rolling = false;
 }, 15_000);
 
-await loadSettings(); await loadStats();
+await loadSettings(); await loadStats(); await loadSurprises();
 // the server may have been off at midnight: hand out yesterday's prizes now (no-op if already done)
 await awardDay(dayOf(Date.now() - 86400_000));
 await loadBoard();

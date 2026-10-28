@@ -16,7 +16,8 @@
 
   if (gameOk) { try { PC.boot(); } catch (e) { console.error(e); } }
   $("maphint").textContent = touch ? "TAP THE MAP TO ENLARGE" : "CLICK THE MAP OR PRESS M TO ENLARGE";
-  $("boardBtn").addEventListener("click", () => $("board").classList.toggle("open"));
+  $("boardBtn").addEventListener("click", () => { $("chat").classList.remove("open"); $("board").classList.toggle("open"); });
+  $("chatBtn").addEventListener("click", () => { $("board").classList.remove("open"); const on = $("chat").classList.toggle("open"); if (on) setTimeout(() => { $("chatLog").scrollTop = 1e9; }, 0); });
   $("board").addEventListener("click", () => $("board").classList.remove("open")); // tap the board to close it
   if (window.PC_DEMO) show("demobar");
 

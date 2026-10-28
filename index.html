@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Sans:wght@400;600&display=swap">
-<link rel="stylesheet" href="static/style.bdd55f9239.css">
+<link rel="stylesheet" href="static/style.f0ae64445e.css">
 </head>
 <body>
 <div id="game"></div>
@@ -45,12 +45,16 @@
   <ol id="rows"></ol>
   <div class="tag">Daily · top 3 win $PUMP</div>
 </div>
+<div class="hud panel" id="chat" hidden>
+  <div id="chatLog" class="chatlog" aria-live="polite"></div>
+  <form id="chatForm" autocomplete="off"><input id="chatInput" maxlength="140" placeholder="Say something… (Enter)" aria-label="Chat message" spellcheck="false"></form>
+</div>
 <div class="hud" id="feed"></div>
 <div class="hud" id="wins"></div>
 <div class="hud" id="toast"></div>
 <div class="hud" id="banner"></div>
 <div class="hud" id="help" hidden></div>
-<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide>HOW TO PLAY</button><button type="button" class="chip gold" id="prizesBtn" hidden>MY PRIZES <i id="prizeDot" hidden></i></button><button type="button" class="chip boardbtn" id="boardBtn">🏆 BOARD</button><button type="button" class="chip" id="switch" hidden>SWITCH PUMPER</button><button type="button" class="chip" id="leave">LEAVE</button></div>
+<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide>HOW TO PLAY</button><button type="button" class="chip gold" id="prizesBtn" hidden>MY PRIZES <i id="prizeDot" hidden></i></button><button type="button" class="chip boardbtn" id="boardBtn">🏆</button><button type="button" class="chip boardbtn" id="chatBtn">💬</button><button type="button" class="chip" id="switch" hidden>SWITCH PUMPER</button><button type="button" class="chip" id="leave">LEAVE</button></div>
 <div class="hud panel" id="lock" hidden>
   <div class="t">PICK THE LOCK</div>
   <div class="lockbar"><i id="zone"></i><b id="needle"></b></div>
@@ -212,6 +216,9 @@
           <div class="card"><h4>RELEASED IN BATCHES</h4><p>Prize boxes go live a few at a time. When a batch is found, the next one goes live somewhere in the city.</p></div>
           <div class="card"><h4>EVERYONE SEES IT</h4><p>When someone opens a prize, every player sees it on screen.</p></div>
         </div>
+        <h3>The surprise pill</h3>
+        <p>Every district has <b>one surprise pill</b> wandering its streets. It glows pink and never stops moving. Catch up with it, press E (or tap it) and pick its lock to get a <b>big XP boost</b>, worth many boxes at once. It stands still while you pick the lock, and its lock is a little harder.</p>
+        <p>Once someone catches it, a new surprise pill appears in that district <b>12 hours later</b>. Look for the blinking pink dot on the minimap.</p>
         <p class="note">Which box holds a prize is decided by our server when the box is opened. Nobody, including your browser, can see it in advance.</p>
       </section>
 
@@ -242,6 +249,7 @@
         </table>
         <div class="cards">
           <div class="card"><h4>TRAILS</h4><p>Each of the 10 one-of-one NFTs leaves its own trail behind it as it walks: ice, lava, gold coins, glitches and more. Wallets holding 20,000,000+ $PUMPERS leave a gold trail.</p></div>
+          <div class="card"><h4>NAME COLORS</h4><p>Your name shows your level to everyone, under your Pumper and in the chat: <span class="t-one" style="color:#ffd667">gold</span> for a 1/1 or 20M+ $PUMPERS, <span style="color:#dfe6f2">silver</span> for Legendary or 10M+, <span style="color:#e8a060">bronze</span> for Epic or 5M+.</p></div>
           <div class="card"><h4>MORE COMING</h4><p>More holder perks are on the way. Holding both tokens and NFTs will matter.</p></div>
         </div>
       </section>
@@ -315,6 +323,7 @@
           <li>Each wallet has limits on how many boxes it can open, so bots and multi-wallets gain nothing.</li>
           <li>Holdings are checked when you connect and again when you claim a prize.</li>
           <li>Suspicious wins can be held for review before payout.</li>
+          <li>The chat blocks links and wallet addresses. Nobody from Pumpers City will ever DM you, ask you to visit a link or send funds.</li>
         </ul>
       </section>
 
@@ -335,7 +344,7 @@
 
 <script src="static/config.f3eae49c71.js"></script>
 <script src="static/phaser.min.62081f6a1b.js"></script>
-<script src="static/game.efdee4e799.js"></script>
-<script src="static/site.b610af2ca6.js"></script>
+<script src="static/game.2a53e2f223.js"></script>
+<script src="static/site.931cb60047.js"></script>
 </body>
 </html>
