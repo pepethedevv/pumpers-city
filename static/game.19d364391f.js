@@ -2068,7 +2068,7 @@ const PC = {
     if (!profile.spriteNum) return;
     const n = profile.spriteNum, key = "nft_" + n;
     if (!this.game.textures.exists(key)) {
-      this.atlas = this.atlas || await new Promise(res => { const img = new Image(); img.onload = () => res(img); img.onerror = () => res(null); img.src = "static/atlas.8be1ec70f1.png"; });
+      this.atlas = this.atlas || await new Promise(res => { const img = new Image(); img.onload = () => res(img); img.onerror = () => res(null); img.src = "static/atlas.287788f186.png"; });
       if (this.atlas) { const c = document.createElement("canvas"); c.width = c.height = 32; c.getContext("2d").drawImage(this.atlas, ((n - 1) % 64) * 32, Math.floor((n - 1) / 64) * 32, 32, 32, 0, 0, 32, 32); this.game.textures.addCanvas(key, c); }
     }
     if (this.game.textures.exists(key)) profile.tex = key;
