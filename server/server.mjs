@@ -263,7 +263,7 @@ async function hello(p, msg) {
   applyLook(p, msg.skin);
   p.ready = true;
   send(p, { t: "hi", id: p.id, token: wallet ? token(wallet) : null, wallet, err, name: p.name, level: p.acc.level, canOpen: p.acc.canOpen,
-    resetHour: RESET_HOUR, b: badge(p), chat: chatLog.slice(-30), xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
+    resetHour: RESET_HOUR, inUse: inUseList(), b: badge(p), chat: chatLog.slice(-30), xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
     wins: stats.recent.filter(w => Date.now() - Date.parse(w.at) < 300_000).slice(0, 3) });
   sendBoard(p);
 }
@@ -469,6 +469,13 @@ async function loadSurprises() {
   if (dbReady()) try { for (const row of await db("surprise_pills?select=map,respawn_at")) if (surprise[row.map]) surprise[row.map].respawnAt = Date.parse(row.respawn_at) || 0; } catch (e) { log("load pills:", e.message); }
   surpriseLoaded = true;
 }
+
+// ---------------- NFTs being played ----------------
+// Every client gets the list of NFT numbers players are using, so citizens (NPCs) that look the same can step aside.
+let inUseSent = "";
+const inUseList = () => [...new Set([...players.values()].filter(p => p.ready && p.skin?.n).map(p => p.skin.n))].sort((a, b) => a - b);
+function pushInUse() { const l = inUseList(), k = l.join(","); if (k === inUseSent) return; inUseSent = k; allSend({ t: "use", n: l }); }
+setInterval(pushInUse, 2000);
 
 // ---------------- chat ----------------
 // One chat for the whole city. No links and no wallet / contract addresses (the usual scam bait).
