@@ -409,7 +409,7 @@ function tick() {
 // wallet earns nothing extra. One network (IP) can't run more than a few box-opening wallets at once.
 const ENERGY = {
   curve: [[0, 0], [1, 2], [2.5, 5], [5, 8], [10, 12], [20, 16]],    // [millions held, energy per hour]; flat after 20M
-  nftMillions: { common: 0.5, rare: 0.75, epic: 1, legendary: 1.5, oneofone: 3 }, // each NFT counts as this many millions
+  nftMillions: { common: 0.5, rare: 0.75, epic: 1, legendary: 1.5, oneofone: 3 }, // each NFT: this many millions on the curve, or this much energy/hour on top
   storeHours: 8,                                                    // the tank holds 8 hours of refill
   minStore: 10,
   launchHours: 4, launchWindowMs: 2 * 3600_000,                     // wallets that start holding in the first 2 hours get 4 hours' worth once
@@ -420,11 +420,17 @@ const energy = new Map(); // wallet → { e, power, at, fresh, dirty }
 const IP_MAX_WALLETS = +env.IP_MAX_WALLETS || 3, IP_WINDOW_MS = 30 * 60_000;
 const ipOpeners = new Map(); // ip → Map(wallet → last box opened)
 let nextSnapshot = Date.now() + 5000, decimals = null;
-function powerOf(tokens, tiers) {
-  const m = tokens / 1e6 + tiers.reduce((a, t) => a + (ENERGY.nftMillions[t] || 0), 0), c = ENERGY.curve;
+// NFTs always add: either they count as extra tokens on the curve, or (once tokens reach the top of the curve)
+// each NFT adds its own energy per hour on top. Whichever is more counts.
+function curveAt(m) {
+  const c = ENERGY.curve;
   if (m >= c[c.length - 1][0]) return c[c.length - 1][1];
-  for (let i = 1; i < c.length; i++) if (m <= c[i][0]) { const [x0, y0] = c[i - 1], [x1, y1] = c[i]; return +(y0 + (y1 - y0) * (m - x0) / (x1 - x0)).toFixed(3); }
+  for (let i = 1; i < c.length; i++) if (m <= c[i][0]) { const [x0, y0] = c[i - 1], [x1, y1] = c[i]; return y0 + (y1 - y0) * (m - x0) / (x1 - x0); }
   return 0;
+}
+function powerOf(tokens, tiers) {
+  const nftM = tiers.reduce((a, t) => a + (ENERGY.nftMillions[t] || 0), 0);
+  return +Math.max(curveAt(tokens / 1e6 + nftM), curveAt(tokens / 1e6) + nftM).toFixed(3);
 }
 const capOf = power => Math.max(ENERGY.minStore, Math.round(power * ENERGY.storeHours));
 function energyOf(p) {
