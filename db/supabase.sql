@@ -157,3 +157,4 @@ create table if not exists guest_names (
   updated_at timestamptz not null default now()
 );
 alter table guest_names enable row level security;
+alter table energy add column if not exists since timestamptz;   -- holding streak start (7 days 1.5x, 30 days 2x)

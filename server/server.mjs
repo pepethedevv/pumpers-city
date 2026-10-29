@@ -410,7 +410,8 @@ function tick() {
 const ENERGY = {
   curve: [[0, 0], [1, 2], [2.5, 5], [5, 8], [10, 12], [20, 16]],    // [millions held, energy per hour]; flat after 20M
   nftMillions: { common: 0.1, rare: 0.15, epic: 0.25, legendary: 0.5, oneofone: 1 }, // each NFT counts as this many million $PUMPERS (10 Commons = 1M)
-  nftBonus: { common: 1, rare: 1.5, epic: 2, legendary: 3, oneofone: 6 }, // or, whichever is more: energy/hour each NFT adds on top of tokens
+  nftBonus: { common: 0.2, rare: 0.6, epic: 1.2, legendary: 4, oneofone: 8 }, // energy/hour each NFT adds on top of tokens (10 Commons = 1M $PUMPERS)
+  hold: [[30, 2], [7, 1.5]],                                        // [days held without selling, multiplier]
   storeHours: 8,                                                    // the tank holds 8 hours of refill
   minStore: 10,
   launchHours: 4, launchWindowMs: 2 * 3600_000,                     // wallets that start holding in the first 2 hours get 4 hours' worth once
@@ -430,15 +431,20 @@ function curveAt(m) {
   return 0;
 }
 function powerOf(tokens, tiers) {
-  const nftM = tiers.reduce((a, t) => a + (ENERGY.nftMillions[t] || 0), 0);
-  const bonus = tiers.reduce((a, t) => a + (ENERGY.nftBonus[t] || 0), 0);
-  return +Math.max(curveAt(tokens / 1e6 + nftM), curveAt(tokens / 1e6) + bonus).toFixed(3);
+  return +(curveAt(tokens / 1e6) + tiers.reduce((a, t) => a + (ENERGY.nftBonus[t] || 0), 0)).toFixed(3);
+}
+// diamond hands: holding without lowering your bag for 7 days pays 1.5x, 30 days 2x
+function holdMult(r, now = Date.now()) {
+  const days = (now - (r.since || now)) / 86400_000 * ENERGY.timeScale;
+  for (const [d, m] of ENERGY.hold) if (days >= d) return m;
+  return 1;
 }
 const capOf = power => Math.max(ENERGY.minStore, Math.round(power * ENERGY.storeHours));
 function energyOf(p) {
   if (DEV && p.dev) return { e: 99, cap: 99, power: 99, next: 0 };
   const r = p.wallet && energy.get(p.wallet);
-  return { e: r ? Math.floor(r.e) : 0, cap: capOf(r ? r.power : 0), power: r ? +r.power.toFixed(2) : 0, next: Math.max(0, nextSnapshot - Date.now()) };
+  const m = r ? holdMult(r) : 1, pw = r ? r.power * m : 0;
+  return { e: r ? Math.floor(r.e) : 0, cap: capOf(pw), power: +pw.toFixed(2), mult: m, next: Math.max(0, nextSnapshot - Date.now()) };
 }
 async function snapshot() {
   nextSnapshot = Date.now() + ENERGY.everyMs;
@@ -473,11 +479,13 @@ async function snapshot() {
   // (10+ minutes) gets a 4-hour start once; after that, new wallets simply fill from their first check.
   for (const w of new Set([...tok.keys(), ...nft.keys(), ...energy.keys()])) {
     const pNow = powerOf(tok.get(w) || 0, nft.get(w) || []), r = energy.get(w);
-    if (!r) { if (pNow > 0) energy.set(w, { e: 0, power: pNow, at: now, fresh: true, dirty: true }); continue; }
+    if (!r) { if (pNow > 0) energy.set(w, { e: 0, power: pNow, at: now, since: now, fresh: true, dirty: true }); continue; }
     const hours = Math.min(ENERGY.storeHours, (now - r.at) / 3600_000 * ENERGY.timeScale);
-    let e = r.e + Math.min(r.power, pNow) * hours; // only what was held the whole time counts
+    if (!r.since || pNow < r.power - 1e-9) { r.since = now; r.dirty = true; } // sold some: the holding streak starts again
+    const mult = holdMult(r, now);
+    let e = r.e + Math.min(r.power, pNow) * hours * mult; // only what was held the whole time counts
     if (r.fresh && Math.min(r.power, pNow) > 0) { if (inLaunch) e += Math.min(r.power, pNow) * ENERGY.launchHours; r.fresh = false; r.dirty = true; }
-    e = Math.min(capOf(pNow), e);
+    e = Math.min(capOf(pNow * mult), e);
     if (e !== r.e || pNow !== r.power) r.dirty = true;
     Object.assign(r, { e, power: pNow, at: now });
   }
@@ -488,16 +496,16 @@ let freshCol = true; // false until db/supabase.sql adds energy.fresh
 async function saveEnergy() {
   if (!dbReady()) return;
   const rows = [];
-  for (const [wallet, r] of energy) if (r.dirty) { rows.push(Object.assign({ wallet, e: r.e, power: r.power, at: new Date(r.at).toISOString() }, freshCol ? { fresh: !!r.fresh } : {})); r.dirty = false; }
+  for (const [wallet, r] of energy) if (r.dirty) { rows.push(Object.assign({ wallet, e: r.e, power: r.power, at: new Date(r.at).toISOString() }, freshCol ? { fresh: !!r.fresh, since: new Date(r.since || r.at).toISOString() } : {})); r.dirty = false; }
   for (let i = 0; i < rows.length; i += 500)
     try { await db("energy?on_conflict=wallet", { method: "POST", body: rows.slice(i, i + 500), prefer: "resolution=merge-duplicates" }); }
-    catch (e) { if (freshCol && /fresh/.test(e.message)) { freshCol = false; log("energy.fresh column missing: run db/supabase.sql"); } else log("save energy:", e.message); for (const row of rows.slice(i, i + 500)) energy.get(row.wallet).dirty = true; }
+    catch (e) { if (freshCol && /fresh|since/.test(e.message)) { freshCol = false; log("energy.fresh column missing: run db/supabase.sql"); } else log("save energy:", e.message); for (const row of rows.slice(i, i + 500)) energy.get(row.wallet).dirty = true; }
 }
 async function loadEnergy() {
   if (!dbReady()) return;
-  try { for (const r of await db("energy?select=wallet,e,power,fresh,at&limit=100000")) energy.set(r.wallet, { e: +r.e, power: +r.power, fresh: !!r.fresh, at: Date.parse(r.at), dirty: false }); }
+  try { for (const r of await db("energy?select=wallet,e,power,fresh,since,at&limit=100000")) energy.set(r.wallet, { e: +r.e, power: +r.power, fresh: !!r.fresh, since: Date.parse(r.since) || Date.parse(r.at), at: Date.parse(r.at), dirty: false }); }
   catch (e) {
-    if (!/fresh/.test(e.message)) return log("load energy:", e.message);
+    if (!/fresh|since/.test(e.message)) return log("load energy:", e.message);
     freshCol = false;
     try { for (const r of await db("energy?select=wallet,e,power,at&limit=100000")) energy.set(r.wallet, { e: +r.e, power: +r.power, at: Date.parse(r.at), dirty: false }); } catch (e2) { log("load energy:", e2.message); }
   }

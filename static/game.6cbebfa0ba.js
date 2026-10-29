@@ -2055,7 +2055,7 @@ function updateHud() {
   if (en && NET.live) {
     $("energy").textContent = en.e; $("energyCap").textContent = en.cap; $("energyBar").style.width = Math.min(100, en.e / Math.max(1, en.cap) * 100) + "%";
     const mins = Math.max(1, Math.ceil((en.until - Date.now()) / 60000));
-    $("energyNext").textContent = en.power > 0 ? (en.e >= en.cap ? "Full" : `+${en.power >= 6 ? Math.round(en.power / 6) : (en.power / 6).toFixed(1)} in ${mins}m · ${en.power}/hour`) : "Refills while you hold $PUMPERS or NFTs";
+    $("energyNext").textContent = en.power > 0 ? (en.e >= en.cap ? "Full" : `+${en.power >= 6 ? Math.round(en.power / 6) : (en.power / 6).toFixed(1)} in ${mins}m · ${en.power}/hour${en.mult > 1 ? ` (x${en.mult} holding)` : ""}`) : "Refills while you hold $PUMPERS or NFTs";
   }
   $("opened").textContent = state.opened; $("found").textContent = state.found.toLocaleString("en-US");
   let rows;
