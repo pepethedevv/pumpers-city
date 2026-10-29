@@ -147,3 +147,5 @@ create table if not exists energy (
   at     timestamptz not null default now()
 );
 alter table energy enable row level security;
+alter table energy add column if not exists fresh boolean not null default false;
+alter table game_settings add column if not exists energy_launch timestamptz;   -- set by the server at the first holder check

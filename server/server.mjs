@@ -275,6 +275,12 @@ async function openBox(p, id) {
   const no = (msg, extra) => send(p, { t: "D", id, msg, ...extra });
   if (!b) return no("Too late, that box is gone.");
   if (!p.acc.canOpen) return no("Hold $PUMPERS to open boxes");
+  // one network can't run a crowd of box-opening wallets: the first few that open boxes there keep going, others wait
+  if (p.ip && p.wallet) {
+    const seen = ipOpeners.get(p.ip) || new Map();
+    for (const [w, t] of seen) if (now - t > IP_WINDOW_MS) seen.delete(w);
+    if (!seen.has(p.wallet) && seen.size >= IP_MAX_WALLETS) return no("Too many wallets are opening boxes from your network. Try again later.");
+  }
   const en = energyOf(p);
   if (en.e < 1) return no(`Out of energy. It refills while you hold: next refill in ${Math.max(1, Math.ceil(en.next / 60000))} min`, { energy: en });
   if (!settings.boxes_open) return no("Boxes open at launch");
@@ -307,6 +313,7 @@ async function hitLock(p, id, e) {
   const isPrize = prizeBoxes.delete(id);
   if (isPrize) batch--;
   p.opens.push(now);
+  if (p.ip && p.wallet) { if (!ipOpeners.has(p.ip)) ipOpeners.set(p.ip, new Map()); ipOpeners.get(p.ip).set(p.wallet, now); }
   if (!(DEV && p.dev)) { const er = energy.get(p.wallet); if (er) { er.e = Math.max(0, er.e - 1); er.dirty = true; } }
   const xp = Math.round(rollXp() * TIERS[p.acc.level].xp);
   if (p.s.day !== curDay) { p.s.day = curDay; p.s.dayXp = 0; }
@@ -390,23 +397,30 @@ function tick() {
 // ---------------- surprise pills: one per district, wandering around ----------------
 // Catch it, pick its lock, get a big XP boost. A new one appears in that district 12 hours later.
 // ---------------- energy ----------------
-// Opening a box costs 1 energy. Energy refills while you hold, in proportion to what you hold:
-// more $PUMPERS and more / rarer NFTs = more energy per hour. It is linear on purpose, so splitting
-// 20M across 20 wallets gives exactly the same total as keeping it in one.
-// Holdings are read for ALL holders every 10 minutes straight from the chain, and an interval only counts if you
-// held at both ends of it, so passing the same tokens from wallet to wallet earns nothing extra.
+// Opening a box costs 1 energy. Energy refills while you hold: more $PUMPERS and more / rarer NFTs = more
+// energy per hour, with each extra million counting a bit less (1M 2/h, 2.5M 5/h, 5M 8/h, 10M 12/h, 20M+ 16/h).
+// NFTs count as token millions on the same curve. Holdings are read for ALL holders every 10 minutes straight from
+// the chain, and an interval only counts if you held at both ends of it, so passing the same tokens from wallet to
+// wallet earns nothing extra. One network (IP) can't run more than a few box-opening wallets at once.
 const ENERGY = {
-  perMillion: +env.ENERGY_PER_MILLION || 2,                         // energy per hour for each 1,000,000 $PUMPERS
-  nft: { common: 1, rare: 1.5, epic: 2, legendary: 3, oneofone: 6 },  // energy per hour for each NFT
-  storeHours: 12,                                                   // the tank holds 12 hours of refill
+  curve: [[0, 0], [1, 2], [2.5, 5], [5, 8], [10, 12], [20, 16]],    // [millions held, energy per hour]; flat after 20M
+  nftMillions: { common: 0.5, rare: 0.75, epic: 1, legendary: 1.5, oneofone: 3 }, // each NFT counts as this many millions
+  storeHours: 8,                                                    // the tank holds 8 hours of refill
   minStore: 10,
-  launchHours: 1,                                                   // holders at launch (the very first check) start with 1 hour's worth
+  launchHours: 4, launchWindowMs: 2 * 3600_000,                     // wallets that start holding in the first 2 hours get 4 hours' worth once
   everyMs: +env.ENERGY_SNAPSHOT_MS || 10 * 60_000,
   timeScale: +env.ENERGY_TIME_SCALE || 1,                           // tests only: speeds up time
 };
-const energy = new Map(); // wallet → { e, power, at, dirty }
+const energy = new Map(); // wallet → { e, power, at, fresh, dirty }
+const IP_MAX_WALLETS = +env.IP_MAX_WALLETS || 3, IP_WINDOW_MS = 30 * 60_000;
+const ipOpeners = new Map(); // ip → Map(wallet → last box opened)
 let nextSnapshot = Date.now() + 5000, decimals = null;
-const powerOf = (tokens, tiers) => tokens / 1e6 * ENERGY.perMillion + tiers.reduce((a, t) => a + (ENERGY.nft[t] || 0), 0);
+function powerOf(tokens, tiers) {
+  const m = tokens / 1e6 + tiers.reduce((a, t) => a + (ENERGY.nftMillions[t] || 0), 0), c = ENERGY.curve;
+  if (m >= c[c.length - 1][0]) return c[c.length - 1][1];
+  for (let i = 1; i < c.length; i++) if (m <= c[i][0]) { const [x0, y0] = c[i - 1], [x1, y1] = c[i]; return +(y0 + (y1 - y0) * (m - x0) / (x1 - x0)).toFixed(3); }
+  return 0;
+}
 const capOf = power => Math.max(ENERGY.minStore, Math.round(power * ENERGY.storeHours));
 function energyOf(p) {
   if (DEV && p.dev) return { e: 99, cap: 99, power: 99, next: 0 };
@@ -438,32 +452,42 @@ async function snapshot() {
       if ((r.items || []).length < 1000) break;
     }
   } catch (e) { log("energy snapshot:", e.message); return; }
-  const now = Date.now(), launch = energy.size === 0;
-  // New wallets start empty and fill from their first check on (only the launch check hands out a start),
-  // so a fresh wallet gets nothing for showing up: no point in making new wallets.
+  const now = Date.now();
+  // the launch is the first holder check ever; if wallets already have energy saved, the launch has passed
+  if (!settings.energy_launch && (tok.size || nft.size)) { settings.energy_launch = new Date(energy.size ? 0 : now).toISOString(); if (dbReady()) db("game_settings?id=eq.1", { method: "PATCH", body: { energy_launch: settings.energy_launch } }).catch(e => log("launch time:", e.message)); }
+  const inLaunch = settings.energy_launch && now - Date.parse(settings.energy_launch) < ENERGY.launchWindowMs;
+  // New wallets start empty. In the first 2 hours after launch, a wallet that has held across two checks
+  // (10+ minutes) gets a 4-hour start once; after that, new wallets simply fill from their first check.
   for (const w of new Set([...tok.keys(), ...nft.keys(), ...energy.keys()])) {
     const pNow = powerOf(tok.get(w) || 0, nft.get(w) || []), r = energy.get(w);
-    if (!r) { if (pNow > 0) energy.set(w, { e: launch ? pNow * ENERGY.launchHours : 0, power: pNow, at: now, dirty: true }); continue; }
+    if (!r) { if (pNow > 0) energy.set(w, { e: 0, power: pNow, at: now, fresh: true, dirty: true }); continue; }
     const hours = Math.min(ENERGY.storeHours, (now - r.at) / 3600_000 * ENERGY.timeScale);
-    const e = Math.min(capOf(pNow), r.e + Math.min(r.power, pNow) * hours); // only what was held the whole time counts
+    let e = r.e + Math.min(r.power, pNow) * hours; // only what was held the whole time counts
+    if (r.fresh && Math.min(r.power, pNow) > 0) { if (inLaunch) e += Math.min(r.power, pNow) * ENERGY.launchHours; r.fresh = false; r.dirty = true; }
+    e = Math.min(capOf(pNow), e);
     if (e !== r.e || pNow !== r.power) r.dirty = true;
     Object.assign(r, { e, power: pNow, at: now });
   }
   for (const p of players.values()) if (p.wallet && p.ready) send(p, { t: "en", ...energyOf(p) });
   saveEnergy();
 }
+let freshCol = true; // false until db/supabase.sql adds energy.fresh
 async function saveEnergy() {
   if (!dbReady()) return;
   const rows = [];
-  for (const [wallet, r] of energy) if (r.dirty) { rows.push({ wallet, e: r.e, power: r.power, at: new Date(r.at).toISOString() }); r.dirty = false; }
+  for (const [wallet, r] of energy) if (r.dirty) { rows.push(Object.assign({ wallet, e: r.e, power: r.power, at: new Date(r.at).toISOString() }, freshCol ? { fresh: !!r.fresh } : {})); r.dirty = false; }
   for (let i = 0; i < rows.length; i += 500)
     try { await db("energy?on_conflict=wallet", { method: "POST", body: rows.slice(i, i + 500), prefer: "resolution=merge-duplicates" }); }
-    catch (e) { log("save energy:", e.message); for (const row of rows.slice(i, i + 500)) energy.get(row.wallet).dirty = true; }
+    catch (e) { if (freshCol && /fresh/.test(e.message)) { freshCol = false; log("energy.fresh column missing: run db/supabase.sql"); } else log("save energy:", e.message); for (const row of rows.slice(i, i + 500)) energy.get(row.wallet).dirty = true; }
 }
 async function loadEnergy() {
   if (!dbReady()) return;
-  try { for (const r of await db("energy?select=wallet,e,power,at&limit=100000")) energy.set(r.wallet, { e: +r.e, power: +r.power, at: Date.parse(r.at), dirty: false }); }
-  catch (e) { log("load energy:", e.message); }
+  try { for (const r of await db("energy?select=wallet,e,power,fresh,at&limit=100000")) energy.set(r.wallet, { e: +r.e, power: +r.power, fresh: !!r.fresh, at: Date.parse(r.at), dirty: false }); }
+  catch (e) {
+    if (!/fresh/.test(e.message)) return log("load energy:", e.message);
+    freshCol = false;
+    try { for (const r of await db("energy?select=wallet,e,power,at&limit=100000")) energy.set(r.wallet, { e: +r.e, power: +r.power, at: Date.parse(r.at), dirty: false }); } catch (e2) { log("load energy:", e2.message); }
+  }
 }
 setInterval(() => { if (Date.now() >= nextSnapshot) snapshot(); }, 1000);
 
@@ -600,7 +624,8 @@ const originOk = o => { if (DEV) return true; try { return SITES.includes(new UR
 
 wss.on("connection", (ws, req) => {
   if (!originOk(req.headers.origin) || players.size >= MAX_PLAYERS) { ws.close(4003, players.size >= MAX_PLAYERS ? "full" : "origin"); return; }
-  const p = { id: nextId++, ws, wallet: null, name: "Guest", skin: null, trail: null, nfts: [], acc: { canOpen: false, level: "none", trail: false },
+  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  const p = { id: nextId++, ws, ip, wallet: null, name: "Guest", skin: null, trail: null, nfts: [], acc: { canOpen: false, level: "none", trail: false },
     x: 0, y: 0, f: false, room: null, s: { xp: 0, opened: 0, found: 0 }, opens: [], jam: new Map(), seen: new Map(), alive: true, rate: 0, rateT: Date.now() };
   players.set(p.id, p);
   ws.on("pong", () => { p.alive = true; });
