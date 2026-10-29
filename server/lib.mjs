@@ -8,7 +8,7 @@ import bs58 from "bs58";
 export const ADDRESSES = {
   PUMPERS_MINT: "",     // $PUMPERS token address (at token launch)
   NFT_COLLECTION: "4G5jVgYKZBbBPtpeaS3SXpMfuhPDhmLEYoMXyoKMqbN7", // Pumpers NFT collection (Metaplex Core)
-  PRIZE_MINT: "",       // the token prizes are paid in ($PUMP)
+  PRIZE_MINT: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn", // the token prizes are paid in ($PUMP)
 };
 export const addr = k => process.env[k] || ADDRESSES[k];
 

@@ -265,3 +265,4 @@ details p { margin: 10px 0 0 !important; color: #d6cfe8; }
 #energyRow .en b { color: #ffe066; }
 #energyRow .bar.en i { background: linear-gradient(90deg, #ffb020, #ffe066); }
 #energyRow small { display: block; color: var(--muted); font-size: 7px; }
+.btn.mint small { font-size: .78em; opacity: .85; margin-left: .4em; white-space: nowrap; }
