@@ -394,7 +394,7 @@ function spawnSurprise(sp) {
   const m = getMap(sp.map), c = { x: m.spawn.x * T + 8, y: m.spawn.y * T + 8 };
   let at = randomWalkable(m);
   for (let k = 0; k < 30 && Math.hypot(at.x - c.x, at.y - c.y) < 400; k++) at = randomWalkable(m); // not right at the entrance
-  Object.assign(sp, { alive: true, x: at.x, y: at.y, goal: null, heldBy: null, sent: "" });
+  Object.assign(sp, { alive: true, x: at.x, y: at.y, path: null, heldBy: null, sent: "" });
   pillSend(sp.map, { t: "sp", x: Math.round(sp.x), y: Math.round(sp.y), born: 1 });
   log("surprise pill in", MAP_NAMES[sp.map]);
 }
@@ -405,18 +405,35 @@ function stepSurprises() {
     if (sp.heldBy && sp.heldUntil > now) continue; // someone is picking its lock: it holds still
     sp.heldBy = null;
     const m = getMap(sp.map);
-    // it floats straight through walls, water and buildings, so it never gets stuck; every stop it heads for
-    // is a spot players can walk to
-    if (!sp.goal || Math.hypot(sp.goal.x - sp.x, sp.goal.y - sp.y) < 4) {
-      let g = randomWalkable(m);
-      for (let k = 0; k < 20 && Math.hypot(g.x - sp.x, g.y - sp.y) > 400; k++) g = randomWalkable(m);
-      sp.goal = g;
+    // it walks the same ground players walk on (never into water), along a path, so it never gets stuck
+    // and wherever it goes, players can follow
+    if (!sp.path || !sp.path.length) { sp.path = pillPath(m, sp.x, sp.y); if (!sp.path.length) continue; }
+    let left = SURPRISE_SPEED * TICK_MS, dx = 0;
+    while (left > 0 && sp.path.length) {
+      const g = sp.path[0], ddx = g.x - sp.x, ddy = g.y - sp.y, d = Math.hypot(ddx, ddy);
+      if (d <= left) { sp.x = g.x; sp.y = g.y; left -= d; sp.path.shift(); dx = ddx || dx; }
+      else { sp.x += ddx / d * left; sp.y += ddy / d * left; dx = ddx; left = 0; }
     }
-    const dx = sp.goal.x - sp.x, dy = sp.goal.y - sp.y, d = Math.hypot(dx, dy) || 1, st = Math.min(d, SURPRISE_SPEED * TICK_MS);
-    sp.x += dx / d * st; sp.y += dy / d * st;
     const k = Math.round(sp.x) + "," + Math.round(sp.y);
     if (k !== sp.sent) { sp.sent = k; pillSend(sp.map, { t: "sp", x: Math.round(sp.x), y: Math.round(sp.y), f: dx < 0 ? 1 : 0 }); }
   }
+}
+// a walkable route from (x, y) to a random reachable spot a few hundred pixels away
+function pillPath(m, x, y) {
+  const W = m.W, sx = Math.floor(x / T), sy = Math.floor(y / T);
+  let goal = null;
+  for (let k = 0; k < 30; k++) { const g = randomWalkable(m); if (Math.hypot(g.x - x, g.y - y) < 420 && Math.hypot(g.x - x, g.y - y) > 64) { goal = g; break; } }
+  if (!goal) goal = randomWalkable(m);
+  const gx = Math.floor(goal.x / T), gy = Math.floor(goal.y / T), start = sy * W + sx, end = gy * W + gx;
+  const prev = new Int32Array(W * m.H).fill(-1), q = [start]; prev[start] = start;
+  const ok = (X, Y) => X >= 0 && Y >= 0 && X < W && Y < m.H && m.reach[Y * W + X] && !SOLID.has(m.g[Y][X]);
+  for (let i = 0; i < q.length && prev[end] < 0; i++) {
+    const c = q[i], cx = c % W, cy = (c - cx) / W;
+    for (const [ddx, ddy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = cx + ddx, Y = cy + ddy, k = Y * W + X; if (!ok(X, Y) || prev[k] >= 0) continue; prev[k] = c; q.push(k); }
+  }
+  if (prev[end] < 0) return [];
+  const pts = []; for (let c = end; c !== start; c = prev[c]) pts.push({ x: (c % W) * T + 8, y: Math.floor(c / W) * T + 8 });
+  return pts.reverse();
 }
 function releaseSurprise(p) { const sp = p.room && surprise[p.room.map]; if (sp && sp.heldBy === p.id) sp.heldBy = null; }
 function openSurprise(p) {

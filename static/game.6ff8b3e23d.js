@@ -152,8 +152,95 @@ function ellipse(m, cx, cy, rx, ry, t, nz, onlyIf) {
 }
 
 // Breadth-first reachability from the spawn. Boxes, NPCs and exploration only use tiles you can actually walk to.
+// Natural barriers that may be opened up so every area has a way in and out (never water, lava or buildings)
+const CUTTABLE = new Set([G.CLIFF, G.PINE, G.BIGTREE, G.HEDGE, G.FENCE]);
+function openTile(m, x, y) {
+  if (!inb(m, x, y) || !CUTTABLE.has(m.g[y][x])) return;
+  const under = m.gr[y][x], gnd = SOLID.has(under) || under === G.ROAD ? (m.trail === G.DIRT ? G.DIRT : m.ground) : under;
+  set(m, x, y, gnd); m.g[y][x] = gnd; m.gr[y][x] = gnd;
+}
+function walkDist(m) {
+  const W = m.W, H = m.H, dist = new Int32Array(W * H).fill(-1), q = [m.spawn.y * W + m.spawn.x]; dist[q[0]] = 0;
+  for (let i = 0; i < q.length; i++) {
+    const p = q[i], x = p % W, y = (p - x) / W;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+      const k = Y * W + X; if (dist[k] >= 0 || SOLID.has(m.g[Y][X])) continue; dist[k] = dist[p] + 1; q.push(k);
+    }
+  }
+  return dist;
+}
+// 1) open areas nobody can get into get a passage cut to the nearest reachable ground (tiny ones are filled in)
+function connectPockets(m) {
+  const W = m.W, H = m.H;
+  for (let round = 0; round < 6; round++) {
+    const dist = walkDist(m), comp = new Int32Array(W * H).fill(-1), comps = [];
+    for (let i = 0; i < W * H; i++) {
+      const x = i % W, y = (i - x) / W;
+      if (dist[i] >= 0 || comp[i] >= 0 || SOLID.has(m.g[y][x])) continue;
+      const id = comps.length, list = [i]; comp[i] = id;
+      for (let j = 0; j < list.length; j++) { const p = list[j], px = p % W, py = (p - px) / W;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = px + dx, Y = py + dy, k = Y * W + X; if (X < 0 || Y < 0 || X >= W || Y >= H || comp[k] >= 0 || dist[k] >= 0 || SOLID.has(m.g[Y][X])) continue; comp[k] = id; list.push(k); } }
+      comps.push(list);
+    }
+    if (!comps.length) return;
+    let cut = 0;
+    for (const list of comps) {
+      if (list.length < 8) { // a crumb of ground inside a cliff or a hedge: fill it with what surrounds it
+        for (const p of list) { const x = p % W, y = (p - x) / W; const around = [m.g[y - 1]?.[x], m.g[y + 1]?.[x], m.g[y]?.[x - 1], m.g[y]?.[x + 1]].find(t => CUTTABLE.has(t)); if (around !== undefined) { set(m, x, y, around); m.g[y][x] = around; } }
+        continue;
+      }
+      // shortest way out through cuttable barriers
+      const prev = new Int32Array(W * H).fill(-2), q = [];
+      for (const p of list) { prev[p] = -1; q.push(p); }
+      let hit = -1;
+      for (let i = 0; i < q.length && hit < 0; i++) { const p = q[i], x = p % W, y = (p - x) / W;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy, k = Y * W + X;
+          if (X < 1 || Y < 1 || X >= W - 1 || Y >= H - 1 || prev[k] !== -2) continue;
+          const t = m.g[Y][X];
+          if (dist[k] >= 0) { prev[k] = p; hit = k; break; }
+          if (!CUTTABLE.has(t) && SOLID.has(t)) continue;
+          prev[k] = p; q.push(k); } }
+      if (hit < 0) continue;
+      for (let p = prev[hit]; p >= 0 && prev[p] !== -1; p = prev[p]) { const x = p % W, y = (p - x) / W; openTile(m, x, y); openTile(m, x + 1, y); openTile(m, x, y + 1); cut++; }
+    }
+    if (!cut) return;
+  }
+}
+// 2) no dead ends behind thin walls: where a thin natural wall (up to 4 tiles) separates two spots that are
+// far apart on foot, open a 2-wide gap in it
+function openShortcuts(m) {
+  const W = m.W, H = m.H;
+  for (let round = 0; round < 4; round++) {
+    const dist = walkDist(m), cands = [];
+    for (const [ax, ay] of [[1, 0], [0, 1]]) {
+      for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+        const a = y * W + x; if (dist[a] < 0) continue;
+        const nx = x + ax, ny = y + ay; if (!CUTTABLE.has(m.g[ny]?.[nx])) continue;
+        let len = 0, X = nx, Y = ny;
+        while (len < 5 && inb(m, X, Y) && CUTTABLE.has(m.g[Y][X])) { len++; X += ax; Y += ay; }
+        if (len > 4 || !inb(m, X, Y)) continue;
+        const b = Y * W + X; if (dist[b] < 0) continue;
+        const gain = Math.abs(dist[a] - dist[b]) - len;
+        if (gain > 45) cands.push({ x, y, ax, ay, len, gain });
+      }
+    }
+    if (!cands.length) return;
+    cands.sort((p, q) => q.gain - p.gain);
+    const used = new Uint8Array(W * H); let made = 0;
+    for (const c of cands) {
+      if (used[c.y * W + c.x]) continue;
+      for (let i = 1; i <= c.len; i++) { const X = c.x + c.ax * i, Y = c.y + c.ay * i; openTile(m, X, Y); openTile(m, X + c.ay, Y + c.ax); }
+      for (let dy = -8; dy <= 8; dy++) for (let dx = -8; dx <= 8; dx++) if (inb(m, c.x + dx, c.y + dy)) used[(c.y + dy) * W + c.x + dx] = 1;
+      if (++made >= 60) break;
+    }
+  }
+}
 function finishMap(m) {
   const W = m.W, H = m.H;
+  fillDeadEnds(m);
+  connectPockets(m);
+  openShortcuts(m);
   fillDeadEnds(m);
   const reach = () => {
     const seen = new Uint8Array(W * H), q = [m.spawn.y * W + m.spawn.x]; seen[q[0]] = 1;
@@ -279,7 +366,13 @@ function parkBlock(m, b, r) {
   }
   if (style === 0 && r() < 0.7) { const px = cx + Math.floor((b.x1 - cx) / 2), py = cy + Math.floor((b.y1 - cy) / 2) + 1; ellipse(m, px, py, Math.min(6, (b.x1 - cx) / 2 - 2), Math.min(4, (b.y1 - cy) / 2 - 2), G.WATER, null, t => t !== G.PATH && t !== G.HEDGE); }
   if (style === 1 && areaOk(m, cx - 1, cy - 1, 3, 3, t => t === G.GRASS || t === G.FLOWER || t === G.TREE)) addObj(m, { kind: "gazebo", x: cx - 1, y: cy - 1, w: 3, h: 3 });
-  if (style === 2) { const w = Math.min(10, b.x1 - b.x0 - 6), h = Math.min(7, b.y1 - b.y0 - 6); fillR(m, cx - (w >> 1), cy - (h >> 1), w, h, G.SAND); for (let k = 0; k < 4; k++) set(m, cx - (w >> 1) + 1 + k * 2, cy - (h >> 1) - 1, G.BENCH); }
+  if (style === 2) {
+    // sandbox in the middle of the lawn; skipped if anything other than lawn or the park's own paths is under it
+    const w = Math.min(10, b.x1 - b.x0 - 6), h = Math.min(7, b.y1 - b.y0 - 6), sx = cx - (w >> 1), sy = cy - (h >> 1);
+    if (w >= 4 && h >= 3 && sx > b.x0 && sy - 1 > b.y0 && sx + w <= b.x1 && sy + h <= b.y1 && areaOk(m, sx, sy - 1, w, h + 1, t => t === G.GRASS || t === G.FLOWER || t === G.TREE || t === G.PATH)) {
+      fillR(m, sx, sy, w, h, G.SAND); for (let k = 0; k < 4; k++) set(m, sx + 1 + k * 2, sy - 1, G.BENCH);
+    }
+  }
   for (const [x, y] of [[cx - 3, cy - 1], [cx + 4, cy + 2], [cx - 1, cy + 4]]) if (m.g[y]?.[x] === G.GRASS || m.g[y]?.[x] === G.FLOWER) set(m, x, y, G.BENCH);
 }
 function parkingBlock(m, b, r) {
@@ -757,15 +850,19 @@ function paintChunk(m, ci, cj) {
         break;
       }
       case G.CLIFF: {
+        // raised rock: clearly darker than any ground you can walk on, with a dark rim all round and a
+        // lit face on the south side. Frost rock only gets small snow flecks (big white patches looked like ground).
         const front = gr(tx, ty + 1) !== G.CLIFF;
-        const snowy = bio === "frost" && SNOWCAP(tx, ty) > 0.56;
-        const top = bio === "frost" ? (snowy ? ["#eef3f8", "#d6dfea", "#ffffff"] : ["#8a96a8", "#7a869a", "#a4b0c0"]) : bio === "forest" ? ["#7a7266", "#6a6256", "#8a8276"] : ["#6e6060", "#5e5050", "#7e7070"];
-        const face = bio === "frost" ? ["#6a7486", "#56607a"] : ["#4e443c", "#3e3630"];
-        R(X, Y, T, T, top[0]); sp(6, top[1], top[2]);
-        if (front) { R(X, Y + 6, T, 10, face[0]); for (let k = 0; k < 3; k++) R(X + 2 + k * 5 + (ty % 2), Y + 7 + (k % 2) * 3, 1, 5, face[1]); R(X, Y + 6, T, 1, shadeHex(face[0], 1.3)); }
-        if (gr(tx, ty - 1) !== G.CLIFF) R(X, Y, T, 1, top[2]);
-        if (gr(tx - 1, ty) !== G.CLIFF) R(X, Y, 1, front ? 6 : T, face[1]);
-        if (gr(tx + 1, ty) !== G.CLIFF) R(X + 15, Y, 1, front ? 6 : T, face[1]);
+        const top = bio === "frost" ? ["#5c6578", "#4e5668", "#6c7588"] : bio === "forest" ? ["#6a6256", "#5a5246", "#7a7266"] : ["#5e5050", "#4e4242", "#6e6060"];
+        const face = bio === "frost" ? ["#3e4556", "#323848"] : ["#3e3630", "#2e2824"];
+        const rim = bio === "frost" ? "#2a2f3c" : "#241e1a";
+        R(X, Y, T, T, top[0]); sp(7, top[1], top[2]);
+        if (r() < .35) R(X + 2 + Math.floor(r() * 9), Y + 2 + Math.floor(r() * 8), 3 + Math.floor(r() * 3), 1, top[1]);
+        if (bio === "frost" && SNOWCAP(tx, ty) > 0.5) for (let k = 0; k < 3; k++) R(X + 1 + Math.floor(r() * 12), Y + 1 + Math.floor(r() * 10), 2, 1, "#e8eef6");
+        if (front) { R(X, Y + 6, T, 10, face[0]); for (let k = 0; k < 3; k++) R(X + 2 + k * 5 + (ty % 2), Y + 7 + (k % 2) * 3, 1, 5, face[1]); R(X, Y + 6, T, 1, shadeHex(face[0], 1.3)); R(X, Y + 15, T, 1, rim); }
+        if (gr(tx, ty - 1) !== G.CLIFF) R(X, Y, T, 2, rim);
+        if (gr(tx - 1, ty) !== G.CLIFF) R(X, Y, 2, T, rim);
+        if (gr(tx + 1, ty) !== G.CLIFF) R(X + 14, Y, 2, T, rim);
         break;
       }
     }
@@ -1084,7 +1181,7 @@ function miniColors(m) {
   const img = x.createImageData(m.W, m.H), d = img.data, cache = {};
   const water = WATER_PAL[m.biome][0], grass = GRASS_PAL[m.biome][1];
   for (let y = 0; y < m.H; y++) for (let X = 0; X < m.W; X++) {
-    let t = m.g[y][X], h = t === G.WATER ? water : (t === G.GRASS || t === G.FLOWER) ? grass : t === G.CLIFF && m.biome === "frost" ? "#9aa6b8" : MINI_COL[t] || "#000000";
+    let t = m.g[y][X], h = t === G.WATER ? water : (t === G.GRASS || t === G.FLOWER) ? grass : t === G.CLIFF && m.biome === "frost" ? "#4e5668" : MINI_COL[t] || "#000000";
     const col = cache[h] || (cache[h] = [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]);
     const k = (y * m.W + X) * 4; d[k] = col[0]; d[k + 1] = col[1]; d[k + 2] = col[2]; d[k + 3] = 255;
   }
