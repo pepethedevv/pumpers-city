@@ -137,3 +137,13 @@ create table if not exists surprise_pills (
   caught_at  timestamptz
 );
 alter table surprise_pills enable row level security;
+
+-- ================= ENERGY =================
+-- opening a box costs 1 energy; it refills while you hold (filled in by the game server every 10 minutes)
+create table if not exists energy (
+  wallet text primary key,
+  e      numeric not null default 0,      -- energy in the tank
+  power  numeric not null default 0,      -- refill per hour from what the wallet held at the last check
+  at     timestamptz not null default now()
+);
+alter table energy enable row level security;

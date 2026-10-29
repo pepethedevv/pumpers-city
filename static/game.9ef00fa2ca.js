@@ -1841,7 +1841,7 @@ const NET = {
         this.up = true; this.retry = 0; this.token = m.token || this.token; this.wallet = m.wallet || this.wallet;
         if (m.wallet && m.token) this.tokens[m.wallet] = m.token;
         Object.assign(state, { tier: TIERS[m.level] || TIERS.none, explorer: !m.canOpen, xp: m.xp, opened: m.opened, found: m.found });
-        this.dayXp = m.dayXp || 0; this.inUse = m.inUse || []; if (m.resetHour !== undefined) this.resetHour = m.resetHour;
+        this.dayXp = m.dayXp || 0; this.inUse = m.inUse || []; setEnergy(m.en); if (m.resetHour !== undefined) this.resetHour = m.resetHour;
         if (m.name) state.nick = m.name;
         state.badge = m.b || null;
         if (sc && sc.myTag && !sc.attract) { sc.myTag.destroy(); sc.myTag = nameTag(sc, sc.player.x, sc.player.y, state.nick, state.badge); }
@@ -1864,9 +1864,10 @@ const NET = {
       case "g": if (on) sc.boxGone(m.id); break;
       case "pos": if (on) sc.correct(m.x, m.y); break;
       case "L": if (on) sc.lockStart(m); break;
-      case "O": this.dayXp = m.dayXp ?? this.dayXp; if (on) sc.lockResult(m); break;
+      case "O": this.dayXp = m.dayXp ?? this.dayXp; setEnergy(m.en); if (on) sc.lockResult(m); break;
+      case "en": setEnergy(m); updateHud(); break;
       case "X": if (on) sc.lockMiss(m.id); break;
-      case "D": if (sc) sc.denied(m); break;
+      case "D": if (m.energy) { setEnergy(m.energy); updateHud(); } if (sc) sc.denied(m); break;
       case "W": if (m.wallet !== this.wallet) announceWin(m.who, m.amount, m.district, false); break;
       case "B": this.board = m.rows || []; this.online = m.online; updateHud(); break;
       case "me":
@@ -2048,6 +2049,14 @@ function level() { return 1 + Math.floor(state.xp / 100); }
 function updateHud() {
   const tr = state.tier; $("tier").innerHTML = state.explorer && tr === TIERS.none ? `<span style="color:${tr.color}">EXPLORER</span> · CAN'T OPEN BOXES` : `<span style="color:${tr.color}">${tr.label === "No NFT" ? "HOLDER" : tr.label.toUpperCase()}</span> · XP x${tr.xp} · SPD +${Math.round((tr.speed - 1) * 100)}%`;
   $("lv").textContent = level(); $("xp").textContent = state.xp; $("xpbar").style.width = (state.xp % 100) + "%";
+  // energy: what you can still open; refills while you hold
+  const en = state.energy;
+  $("energyRow").hidden = !(NET.live && en && !state.explorer);
+  if (en && NET.live) {
+    $("energy").textContent = en.e; $("energyCap").textContent = en.cap; $("energyBar").style.width = Math.min(100, en.e / Math.max(1, en.cap) * 100) + "%";
+    const mins = Math.max(1, Math.ceil((en.until - Date.now()) / 60000));
+    $("energyNext").textContent = en.power > 0 ? (en.e >= en.cap ? "Full" : `+${en.power >= 6 ? Math.round(en.power / 6) : (en.power / 6).toFixed(1)} in ${mins}m · ${en.power}/hour`) : "Refills while you hold $PUMPERS or NFTs";
+  }
   $("opened").textContent = state.opened; $("found").textContent = state.found.toLocaleString("en-US");
   let rows;
   if (NET.live) {
@@ -2129,6 +2138,8 @@ window.addEventListener("keydown", e => {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   if (PC.game && PC.game.scene.getScene("city")?.attract === false) e.preventDefault();
 });
+function setEnergy(en) { if (en) state.energy = { ...en, until: Date.now() + (en.next || 0) }; }
+setInterval(() => { if (NET.live && state.energy && !$("stats").hidden) updateHud(); }, 30000);
 // looks of the NFTs being played right now (from the server, plus your own), see LOOK above
 let _looks = new Set(), _looksKey = "";
 function inUseLooks() {

@@ -5,7 +5,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
 import { WebSocketServer } from "ws";
-import { decide, verifySigned, holdings, addr, dbReady, db } from "./lib.mjs";
+import { decide, verifySigned, holdings, addr, dbReady, db, rpc, RANK } from "./lib.mjs";
 import { getMap, SOLID, MAP_NAMES, T } from "./mapgen.mjs";
 
 const env = process.env;
@@ -263,7 +263,7 @@ async function hello(p, msg) {
   applyLook(p, msg.skin);
   p.ready = true;
   send(p, { t: "hi", id: p.id, token: wallet ? token(wallet) : null, wallet, err, name: p.name, level: p.acc.level, canOpen: p.acc.canOpen,
-    resetHour: RESET_HOUR, inUse: inUseList(), b: badge(p), chat: chatLog.slice(-30), xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
+    en: energyOf(p), resetHour: RESET_HOUR, inUse: inUseList(), b: badge(p), chat: chatLog.slice(-30), xp: p.s.xp, dayXp: p.s.day === curDay ? p.s.dayXp || 0 : 0, opened: p.s.opened, found: p.s.found, online: players.size, boxesOpen: settings.boxes_open,
     wins: stats.recent.filter(w => Date.now() - Date.parse(w.at) < 300_000).slice(0, 3) });
   sendBoard(p);
 }
@@ -275,6 +275,8 @@ async function openBox(p, id) {
   const no = (msg, extra) => send(p, { t: "D", id, msg, ...extra });
   if (!b) return no("Too late, that box is gone.");
   if (!p.acc.canOpen) return no("Hold $PUMPERS to open boxes");
+  const en = energyOf(p);
+  if (en.e < 1) return no(`Out of energy. It refills while you hold: next refill in ${Math.max(1, Math.ceil(en.next / 60000))} min`, { energy: en });
   if (!settings.boxes_open) return no("Boxes open at launch");
   if (dist(p, b) > 34) return no("Walk up to the box first");
   if ((p.jam.get(id) || 0) > now) return no("Lock jammed. Wait a moment");
@@ -305,6 +307,7 @@ async function hitLock(p, id, e) {
   const isPrize = prizeBoxes.delete(id);
   if (isPrize) batch--;
   p.opens.push(now);
+  if (!(DEV && p.dev)) { const er = energy.get(p.wallet); if (er) { er.e = Math.max(0, er.e - 1); er.dirty = true; } }
   const xp = Math.round(rollXp() * TIERS[p.acc.level].xp);
   if (p.s.day !== curDay) { p.s.day = curDay; p.s.dayXp = 0; }
   p.s.xp += xp; p.s.dayXp = (p.s.dayXp || 0) + xp; p.s.opened++; p.s.dirty = p.wallet ? true : false;
@@ -321,7 +324,7 @@ async function hitLock(p, id, e) {
     if (prize) { settings.prizes_left = Math.max(0, settings.prizes_left - 1); p.s.found += prize; stats.won += prize; stats.wins++; }
   } else if (isPrize) batch++;
   refillPrizes();
-  send(p, { t: "O", id, xp, total: p.s.xp, dayXp: p.s.dayXp, opened: p.s.opened, found: p.s.found, prize });
+  send(p, { t: "O", id, xp, total: p.s.xp, dayXp: p.s.dayXp, opened: p.s.opened, found: p.s.found, prize, en: energyOf(p) });
   if (prize) {
     log("PRIZE", short(p.wallet), prize, MAP_NAMES[r.map], "· still hidden in this batch:", batch);
     const w = { who: p.name, wallet: p.wallet, amount: prize, district: MAP_NAMES[r.map], at: new Date().toISOString() };
@@ -386,6 +389,84 @@ function tick() {
 
 // ---------------- surprise pills: one per district, wandering around ----------------
 // Catch it, pick its lock, get a big XP boost. A new one appears in that district 12 hours later.
+// ---------------- energy ----------------
+// Opening a box costs 1 energy. Energy refills while you hold, in proportion to what you hold:
+// more $PUMPERS and more / rarer NFTs = more energy per hour. It is linear on purpose, so splitting
+// 20M across 20 wallets gives exactly the same total as keeping it in one.
+// Holdings are read for ALL holders every 10 minutes straight from the chain, and an interval only counts if you
+// held at both ends of it, so passing the same tokens from wallet to wallet earns nothing extra.
+const ENERGY = {
+  perMillion: +env.ENERGY_PER_MILLION || 2,                         // energy per hour for each 1,000,000 $PUMPERS
+  nft: { common: 1, rare: 1.5, epic: 2, legendary: 3, oneofone: 6 },  // energy per hour for each NFT
+  storeHours: 12,                                                   // the tank holds 12 hours of refill
+  minStore: 10,
+  launchHours: 1,                                                   // holders at launch (the very first check) start with 1 hour's worth
+  everyMs: +env.ENERGY_SNAPSHOT_MS || 10 * 60_000,
+  timeScale: +env.ENERGY_TIME_SCALE || 1,                           // tests only: speeds up time
+};
+const energy = new Map(); // wallet → { e, power, at, dirty }
+let nextSnapshot = Date.now() + 5000, decimals = null;
+const powerOf = (tokens, tiers) => tokens / 1e6 * ENERGY.perMillion + tiers.reduce((a, t) => a + (ENERGY.nft[t] || 0), 0);
+const capOf = power => Math.max(ENERGY.minStore, Math.round(power * ENERGY.storeHours));
+function energyOf(p) {
+  if (DEV && p.dev) return { e: 99, cap: 99, power: 99, next: 0 };
+  const r = p.wallet && energy.get(p.wallet);
+  return { e: r ? Math.floor(r.e) : 0, cap: capOf(r ? r.power : 0), power: r ? +r.power.toFixed(2) : 0, next: Math.max(0, nextSnapshot - Date.now()) };
+}
+async function snapshot() {
+  nextSnapshot = Date.now() + ENERGY.everyMs;
+  const mint = addr("PUMPERS_MINT"), coll = addr("NFT_COLLECTION");
+  if ((!mint && !coll) || !env.HELIUS_API_KEY) return;
+  const tok = new Map(), nft = new Map();
+  try {
+    if (mint) {
+      if (decimals === null) decimals = (await rpc("getTokenSupply", [mint])).value.decimals;
+      for (let page = 1; page < 200; page++) {
+        const r = await rpc("getTokenAccounts", { mint, page, limit: 1000 });
+        for (const a of r.token_accounts || []) tok.set(a.owner, (tok.get(a.owner) || 0) + Number(a.amount) / 10 ** decimals);
+        if ((r.token_accounts || []).length < 1000) break;
+      }
+    }
+    if (coll) for (let page = 1; page < 20; page++) {
+      const r = await rpc("getAssetsByGroup", { groupKey: "collection", groupValue: coll, page, limit: 1000 });
+      for (const it of r.items || []) {
+        if (it.burnt) continue;
+        const raw = String((it.content?.metadata?.attributes || []).find(a => /^(tier|rarity)$/i.test(a.trait_type))?.value || "common").toLowerCase();
+        const tier = raw === "mythic" || raw === "1/1" ? "oneofone" : RANK[raw] ? raw : "common", o = it.ownership?.owner;
+        if (o) { if (!nft.has(o)) nft.set(o, []); nft.get(o).push(tier); }
+      }
+      if ((r.items || []).length < 1000) break;
+    }
+  } catch (e) { log("energy snapshot:", e.message); return; }
+  const now = Date.now(), launch = energy.size === 0;
+  // New wallets start empty and fill from their first check on (only the launch check hands out a start),
+  // so a fresh wallet gets nothing for showing up: no point in making new wallets.
+  for (const w of new Set([...tok.keys(), ...nft.keys(), ...energy.keys()])) {
+    const pNow = powerOf(tok.get(w) || 0, nft.get(w) || []), r = energy.get(w);
+    if (!r) { if (pNow > 0) energy.set(w, { e: launch ? pNow * ENERGY.launchHours : 0, power: pNow, at: now, dirty: true }); continue; }
+    const hours = Math.min(ENERGY.storeHours, (now - r.at) / 3600_000 * ENERGY.timeScale);
+    const e = Math.min(capOf(pNow), r.e + Math.min(r.power, pNow) * hours); // only what was held the whole time counts
+    if (e !== r.e || pNow !== r.power) r.dirty = true;
+    Object.assign(r, { e, power: pNow, at: now });
+  }
+  for (const p of players.values()) if (p.wallet && p.ready) send(p, { t: "en", ...energyOf(p) });
+  saveEnergy();
+}
+async function saveEnergy() {
+  if (!dbReady()) return;
+  const rows = [];
+  for (const [wallet, r] of energy) if (r.dirty) { rows.push({ wallet, e: r.e, power: r.power, at: new Date(r.at).toISOString() }); r.dirty = false; }
+  for (let i = 0; i < rows.length; i += 500)
+    try { await db("energy?on_conflict=wallet", { method: "POST", body: rows.slice(i, i + 500), prefer: "resolution=merge-duplicates" }); }
+    catch (e) { log("save energy:", e.message); for (const row of rows.slice(i, i + 500)) energy.get(row.wallet).dirty = true; }
+}
+async function loadEnergy() {
+  if (!dbReady()) return;
+  try { for (const r of await db("energy?select=wallet,e,power,at&limit=100000")) energy.set(r.wallet, { e: +r.e, power: +r.power, at: Date.parse(r.at), dirty: false }); }
+  catch (e) { log("load energy:", e.message); }
+}
+setInterval(() => { if (Date.now() >= nextSnapshot) snapshot(); }, 1000);
+
 const SURPRISE_ID = -1, SURPRISE_RESPAWN = 12 * 3600_000, SURPRISE_SPEED = 0.06; // px per ms, about half walking speed (players walk 0.11+)
 const surprise = {};
 for (const k of MAPKEYS) surprise[k] = { map: k, alive: false, x: 0, y: 0, goal: null, respawnAt: 0, heldBy: null, heldUntil: 0, sent: "" };
@@ -564,7 +645,7 @@ setInterval(async () => {
     if (before !== p.acc.canOpen + p.acc.level) { const s = p.skin; applyLook(p, s); send(p, { t: "me", level: p.acc.level, canOpen: p.acc.canOpen, name: p.name, b: badge(p), trail: p.trail }); if (p.room) roomSend(p.room, { t: "k", id: p.id, name: p.name, b: badge(p), skin: p.skin, trail: p.trail }, p); }
   }
 }, 300_000);
-process.on("SIGTERM", async () => { await saveXp(); process.exit(0); });
+process.on("SIGTERM", async () => { await saveXp(); await saveEnergy(); process.exit(0); });
 
 // ---------------- daily reset ----------------
 // At the reset hour (19:00 UTC): save everyone's XP, then the database picks the day's top 3 and puts their prizes
@@ -595,7 +676,7 @@ setInterval(async () => {
   rolling = false;
 }, 15_000);
 
-await loadSettings(); await loadStats(); await loadSurprises();
+await loadSettings(); await loadStats(); await loadSurprises(); await loadEnergy();
 // the server may have been off at midnight: hand out yesterday's prizes now (no-op if already done)
 await awardDay(dayOf(Date.now() - 86400_000));
 await loadBoard();

@@ -260,3 +260,8 @@ details p { margin: 10px 0 0 !important; color: #d6cfe8; }
 /* winners list */
 .prow .who b { font-weight: 700; color: var(--fg); }
 .prow .st.ready { color: #ffb070; }
+
+/* energy */
+#energyRow .en b { color: #ffe066; }
+#energyRow .bar.en i { background: linear-gradient(90deg, #ffb020, #ffe066); }
+#energyRow small { display: block; color: var(--muted); font-size: 7px; }

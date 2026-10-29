@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Sans:wght@400;600&display=swap">
-<link rel="stylesheet" href="static/style.ec84581538.css">
+<link rel="stylesheet" href="static/style.341fc254f7.css">
 </head>
 <body>
 <div id="game"></div>
@@ -37,6 +37,7 @@
   <div class="bar"><i id="xpbar"></i></div>
   <div>BOXES <b id="opened">0</b></div>
   <div>FOUND <b id="found">0</b> PUMP</div>
+  <div id="energyRow" hidden><span class="en">⚡ ENERGY <b id="energy">0</b>/<span id="energyCap">0</span></span><div class="bar en"><i id="energyBar"></i></div><small id="energyNext"></small></div>
 </div>
 <div class="hud" id="mapbox" hidden><div class="panel" id="district">DOWNTOWN</div><canvas id="minimap"></canvas><div class="hint" id="maphint">TAP MAP OR PRESS M TO ENLARGE</div></div>
 <div id="bigmap" hidden><canvas id="bigcanvas"></canvas><div>WHITE = YOU · PURPLE = BLACK HOLES · TAP TO CLOSE</div></div>
@@ -167,6 +168,7 @@
       <a href="#g-controls">Controls</a>
       <a href="#g-boxes">Boxes & prizes</a>
       <a href="#g-access">Who can open boxes</a>
+      <a href="#g-energy">Energy</a>
       <a href="#g-levels">Levels & perks</a>
       <a href="#g-nft">The NFTs</a>
       <a href="#g-token">$PUMPERS & prizes</a>
@@ -220,6 +222,27 @@
         <p>Every district has <b>one surprise pill</b> wandering its streets. It glows pink and never stops moving. Catch up with it, press E (or tap it) and pick its lock to get a <b>big XP boost</b>, worth many boxes at once. It's the same for everyone: level multipliers don't apply to the surprise pill. It stands still while you pick the lock, and its lock is a little harder.</p>
         <p>It wanders the streets without stopping and it isn't shown on the map: you have to find it. Once someone catches it, a new surprise pill appears in that district <b>12 hours later</b>.</p>
         <p class="note">Which box holds a prize is decided by our server when the box is opened. Nobody, including your browser, can see it in advance.</p>
+      </section>
+
+      <section id="g-energy">
+        <h2>ENERGY</h2>
+        <p>Opening a box costs <b>1 energy</b>. Your energy refills while you hold, and the more you hold, the faster it fills. Everything counts and adds up: your $PUMPERS and every Pumper NFT in your wallet.</p>
+        <table>
+          <tr><th>You hold</th><th>Energy per hour</th></tr>
+          <tr><td>Every 1,000,000 $PUMPERS</td><td>+2</td></tr>
+          <tr><td>Each Common NFT</td><td>+1</td></tr>
+          <tr><td>Each Rare NFT</td><td>+1.5</td></tr>
+          <tr><td>Each Epic NFT</td><td>+2</td></tr>
+          <tr><td>Each Legendary NFT</td><td>+3</td></tr>
+          <tr><td>Each Mythic NFT</td><td>+6</td></tr>
+        </table>
+        <ul>
+          <li>Example: 5,000,000 $PUMPERS and two Rare NFTs refill <b>13 energy an hour</b>, about 312 boxes a day.</li>
+          <li>Your tank holds 12 hours of refill (at least 10), so come back twice a day to use it all.</li>
+          <li>Energy is topped up every 10 minutes, even while you're offline. A new wallet starts empty and begins filling from the first check after you buy.</li>
+          <li>The surprise pill doesn't cost energy.</li>
+        </ul>
+        <p class="note">Splitting your bag across many wallets gives the same total energy, and passing the same tokens from wallet to wallet gives nothing extra: holdings are checked straight from the chain for every holder every 10 minutes, and only what a wallet kept the whole time counts.</p>
       </section>
 
       <section id="g-access">
@@ -344,7 +367,7 @@
 
 <script src="static/config.f3eae49c71.js"></script>
 <script src="static/phaser.min.62081f6a1b.js"></script>
-<script src="static/game.d4c7088b5d.js"></script>
+<script src="static/game.9ef00fa2ca.js"></script>
 <script src="static/site.7fb3f3df0b.js"></script>
 </body>
 </html>
