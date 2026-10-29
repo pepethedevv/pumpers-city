@@ -182,7 +182,7 @@
   const RANK = { oneofone: 5, legendary: 4, epic: 3, rare: 2, common: 1 };
   let pass = null, chosen = null;
   let atlas = null;
-  const loadAtlas = () => atlas || (atlas = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = "static/atlas.6976a0b13e.png"; }));
+  const loadAtlas = () => atlas || (atlas = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = "static/atlas.7cc2045753.png"; }));
   // draw a Pumper exactly as it looks in the game (64 per row, 32x32 in the atlas)
   async function thumb(n, canvas) {
     const x = canvas.getContext("2d"); x.imageSmoothingEnabled = false;
