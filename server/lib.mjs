@@ -7,7 +7,7 @@ import bs58 from "bs58";
 // A Vercel environment variable with the same name wins if set.
 export const ADDRESSES = {
   PUMPERS_MINT: "",     // $PUMPERS token address (at token launch)
-  NFT_COLLECTION: "",   // Pumpers NFT collection address (after the mint)
+  NFT_COLLECTION: "4G5jVgYKZBbBPtpeaS3SXpMfuhPDhmLEYoMXyoKMqbN7", // Pumpers NFT collection (Metaplex Core)
   PRIZE_MINT: "",       // the token prizes are paid in ($PUMP)
 };
 export const addr = k => process.env[k] || ADDRESSES[k];
@@ -64,6 +64,12 @@ export async function rpc(method, params) {
   if (j.error) throw new Error(j.error.message);
   return j.result;
 }
+// an NFT's traits: from its metadata file, or from the on-chain Attributes plugin of a Metaplex Core asset
+export function traitsOf(it) {
+  const a = it.content?.metadata?.attributes;
+  if (Array.isArray(a) && a.length) return a;
+  return (it.plugins?.attributes?.data?.attribute_list || []).map(x => ({ trait_type: x.key, value: x.value }));
+}
 // $PUMPERS balance and Pumpers NFTs of a wallet
 export async function holdings(wallet) {
   const mint = addr("PUMPERS_MINT"), coll = addr("NFT_COLLECTION");
@@ -78,7 +84,7 @@ export async function holdings(wallet) {
       const r = await rpc("getAssetsByOwner", { ownerAddress: wallet, page, limit: 1000 });
       for (const it of r.items) {
         if (it.burnt || !(it.grouping || []).some(g => g.group_key === "collection" && g.group_value === coll)) continue;
-        const md = it.content?.metadata || {}, attrs = md.attributes || [];
+        const md = it.content?.metadata || {}, attrs = traitsOf(it);
         const raw = String(attrs.find(a => /^(tier|rarity)$/i.test(a.trait_type))?.value || "common").toLowerCase();
         const tier = raw === "mythic" || raw === "1/1" || raw === "oneofone" ? "oneofone" : RANK[raw] ? raw : "common"; // Mythic = the 10 one-of-ones
         nfts.push({

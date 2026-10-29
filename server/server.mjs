@@ -5,7 +5,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
 import { WebSocketServer } from "ws";
-import { decide, verifySigned, holdings, addr, dbReady, db, rpc, RANK } from "./lib.mjs";
+import { decide, verifySigned, holdings, addr, dbReady, db, rpc, RANK, traitsOf } from "./lib.mjs";
 import { getMap, SOLID, MAP_NAMES, T } from "./mapgen.mjs";
 
 const env = process.env;
@@ -450,7 +450,7 @@ async function snapshot() {
       const r = await rpc("getAssetsByGroup", { groupKey: "collection", groupValue: coll, page, limit: 1000 });
       for (const it of r.items || []) {
         if (it.burnt) continue;
-        const raw = String((it.content?.metadata?.attributes || []).find(a => /^(tier|rarity)$/i.test(a.trait_type))?.value || "common").toLowerCase();
+        const raw = String(traitsOf(it).find(a => /^(tier|rarity)$/i.test(a.trait_type))?.value || "common").toLowerCase();
         const tier = raw === "mythic" || raw === "1/1" ? "oneofone" : RANK[raw] ? raw : "common", o = it.ownership?.owner;
         if (o) { if (!nft.has(o)) nft.set(o, []); nft.get(o).push(tier); }
       }
