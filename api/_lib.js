@@ -5,7 +5,7 @@ import bs58 from "bs58";
 // ---------- public addresses (not secret; filled in at launch) ----------
 // A Vercel environment variable with the same name wins if set.
 export const ADDRESSES = {
-  PUMPERS_MINT: "",     // $PUMPERS token address (at token launch)
+  PUMPERS_MINT: "EqXAgHS2PxiL8ZDUGcszsaZpzkjc3XBABSt53LqYpump", // $PUMPERS token
   NFT_COLLECTION: "4G5jVgYKZBbBPtpeaS3SXpMfuhPDhmLEYoMXyoKMqbN7", // Pumpers NFT collection (Metaplex Core)
   PRIZE_MINT: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn", // the token prizes are paid in ($PUMP)
 };
