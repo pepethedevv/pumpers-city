@@ -410,7 +410,7 @@ function tick() {
 const ENERGY = {
   curve: [[0, 0], [1, 2], [2.5, 5], [5, 8], [10, 12], [20, 16]],    // [millions held, energy per hour]; flat after 20M
   nftMillions: { common: 0.1, rare: 0.15, epic: 0.25, legendary: 0.5, oneofone: 1 }, // each NFT counts as this many million $PUMPERS (10 Commons = 1M)
-  nftTopRate: 2,                                                    // above 20M every NFT still adds: its millions x 2 energy/hour
+  nftBonus: { common: 1, rare: 1.5, epic: 2, legendary: 3, oneofone: 6 }, // or, whichever is more: energy/hour each NFT adds on top of tokens
   storeHours: 8,                                                    // the tank holds 8 hours of refill
   minStore: 10,
   launchHours: 4, launchWindowMs: 2 * 3600_000,                     // wallets that start holding in the first 2 hours get 4 hours' worth once
@@ -422,7 +422,7 @@ const IP_MAX_WALLETS = +env.IP_MAX_WALLETS || 3, IP_WINDOW_MS = 30 * 60_000;
 const ipOpeners = new Map(); // ip → Map(wallet → last box opened)
 let nextSnapshot = Date.now() + 5000, decimals = null;
 // NFTs always add: either they count as extra tokens on the curve, or (once tokens reach the top of the curve)
-// each NFT adds its own energy per hour on top (2 per million it counts as). Whichever is more counts.
+// each NFT adds its own energy per hour on top (Common 1 … Mythic 6). Whichever is more counts.
 function curveAt(m) {
   const c = ENERGY.curve;
   if (m >= c[c.length - 1][0]) return c[c.length - 1][1];
@@ -431,7 +431,8 @@ function curveAt(m) {
 }
 function powerOf(tokens, tiers) {
   const nftM = tiers.reduce((a, t) => a + (ENERGY.nftMillions[t] || 0), 0);
-  return +Math.max(curveAt(tokens / 1e6 + nftM), curveAt(tokens / 1e6) + nftM * ENERGY.nftTopRate).toFixed(3);
+  const bonus = tiers.reduce((a, t) => a + (ENERGY.nftBonus[t] || 0), 0);
+  return +Math.max(curveAt(tokens / 1e6 + nftM), curveAt(tokens / 1e6) + bonus).toFixed(3);
 }
 const capOf = power => Math.max(ENERGY.minStore, Math.round(power * ENERGY.storeHours));
 function energyOf(p) {
