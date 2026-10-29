@@ -419,6 +419,7 @@ const ENERGY = {
   timeScale: +env.ENERGY_TIME_SCALE || 1,                           // tests only: speeds up time
 };
 const energy = new Map(); // wallet → { e, power, at, fresh, dirty }
+const TOKEN_LAUNCH = env.ENERGY_LAUNCH || "2026-10-29T19:05:00.000Z"; // $PUMPERS went live
 const IP_MAX_WALLETS = +env.IP_MAX_WALLETS || 3, IP_WINDOW_MS = 30 * 60_000;
 const ipOpeners = new Map(); // ip → Map(wallet → last box opened)
 let nextSnapshot = Date.now() + 5000, decimals = null;
@@ -473,8 +474,14 @@ async function snapshot() {
   } catch (e) { log("energy snapshot:", e.message); return; }
   const now = Date.now();
   // the launch is the first holder check ever; if wallets already have energy saved, the launch has passed
-  if (!settings.energy_launch && (tok.size || nft.size)) { settings.energy_launch = new Date(energy.size ? 0 : now).toISOString(); if (dbReady()) db("game_settings?id=eq.1", { method: "PATCH", body: { energy_launch: settings.energy_launch } }).catch(e => log("launch time:", e.message)); }
-  const inLaunch = settings.energy_launch && now - Date.parse(settings.energy_launch) < ENERGY.launchWindowMs;
+  // the launch is the $PUMPERS token launch. The first time the server sees it, every wallet already holding
+  // (e.g. NFT minters) gets its launch start too; saved in game_settings so a restart doesn't hand it out again.
+  if (Date.parse(settings.energy_launch || 0) !== Date.parse(TOKEN_LAUNCH)) {
+    for (const r of energy.values()) { r.fresh = true; r.dirty = true; }
+    settings.energy_launch = TOKEN_LAUNCH;
+    if (dbReady()) db("game_settings?id=eq.1", { method: "PATCH", body: { energy_launch: TOKEN_LAUNCH } }).catch(e => log("launch time:", e.message));
+  }
+const inLaunch = now >= Date.parse(TOKEN_LAUNCH) && now - Date.parse(TOKEN_LAUNCH) < ENERGY.launchWindowMs;
   // New wallets start empty. In the first 2 hours after launch, a wallet that has held across two checks
   // (10+ minutes) gets a 4-hour start once; after that, new wallets simply fill from their first check.
   for (const w of new Set([...tok.keys(), ...nft.keys(), ...energy.keys()])) {
