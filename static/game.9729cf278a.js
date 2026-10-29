@@ -1184,14 +1184,27 @@ class City extends Phaser.Scene {
     // citizens: every one uses a different look
     const r = rng(m.seed + 5);
     this.npcs = [];
-    const nNpc = Math.min(SPRITES.npcs.length, Math.round(m.spots.length / 600));
+    // citizens: enough of them that the streets feel busy (the first ones use the classic looks, the rest
+    // borrow random Pumpers from the NFT collection once the sprite sheet has loaded)
+    const nNpc = Math.min(SPRITES.npcs.length, Math.round(m.spots.length / 260));
+    const nExtra = Math.max(0, Math.round(m.spots.length / 260) - nNpc);
     for (let i = 0; i < nNpc; i++) {
       const t = this.randomWalkable(r);
       const n = this.add.image(t.x, t.y, upTex(this, "n_" + i)).setOrigin(0.5, 0.9).setScale(0.25);
       n.shadow = this.add.image(t.x, t.y + 1, "shadow");
-      n.target = null; n.wait = r() * 2000; n.speed = 30 + r() * 25;
+      n.target = null; n.wait = r() * 1500; n.speed = 34 + r() * 26;
       this.npcs.push(n);
     }
+    if (nExtra && !this.attract) PC.loadAtlas().then(ok => {
+      if (!ok || !this.sys.isActive() || this.npcs.length > nNpc) return;
+      for (let i = 0; i < nExtra; i++) {
+        const t = this.randomWalkable(Math.random), key = PC.atlasTex(1 + Math.floor(Math.random() * 3323)); if (!key) continue;
+        const n = this.add.image(t.x, t.y, upTex(this, key)).setOrigin(0.5, 0.9).setScale(0.25);
+        n.shadow = this.add.image(t.x, t.y + 1, "shadow");
+        n.target = null; n.wait = Math.random() * 1500; n.speed = 34 + Math.random() * 26;
+        this.npcs.push(n);
+      }
+    });
     this.boxes = []; this.others = new Map();
     // online: the server owns the boxes and tells us where they are; offline: 120 local boxes
     if (!this.live) for (let i = 0; i < 120; i++) this.spawnBox(r);
@@ -1517,7 +1530,6 @@ class City extends Phaser.Scene {
     x.drawImage(this.miniBase, 0, 0);
     const v = this.cameras.main.worldView; x.strokeStyle = "rgba(255,255,255,.85)"; x.lineWidth = 2; x.strokeRect(v.x / T, v.y / T, v.width / T, v.height / T);
     for (const p of m.portals) { x.fillStyle = "#1a0a2a"; x.fillRect(p.x - 4, p.y - 4, 9, 9); x.fillStyle = "#c08aff"; x.fillRect(p.x - 3, p.y - 3, 7, 7); }
-    if (this.surprise && Math.floor(this.time.now / 400) % 2) { const sp = this.surprise; x.fillStyle = "#ff5aa0"; x.fillRect(Math.floor(sp.x / T) - 3, Math.floor(sp.y / T) - 3, 7, 7); }
     x.fillStyle = "#7fd8ff"; for (const o of this.others.values()) x.fillRect(Math.floor(o.s.x / T) - 2, Math.floor(o.s.y / T) - 2, 5, 5);
     const px = Math.floor(this.player.x / T), py = Math.floor(this.player.y / T);
     x.fillStyle = "#000000"; x.fillRect(px - 4, py - 4, 9, 9); x.fillStyle = "#ffffff"; x.fillRect(px - 3, py - 3, 7, 7);
@@ -1589,11 +1601,11 @@ class City extends Phaser.Scene {
       if (Math.abs(n.x - p.x) > 900 || Math.abs(n.y - p.y) > 700) continue;
       n.shadow.setPosition(n.x, n.y + 1).setDepth(n.y - 0.5);
       if (n.wait > 0) { n.wait -= dt; continue; }
-      if (!n.target) { const a = Math.random() * 6.28, d = 30 + Math.random() * 90; n.target = { x: n.x + Math.cos(a) * d, y: n.y + Math.sin(a) * d }; }
+      if (!n.target) { const a = Math.random() * 6.28, d = 60 + Math.random() * 180; n.target = { x: n.x + Math.cos(a) * d, y: n.y + Math.sin(a) * d }; }
       const dx = n.target.x - n.x, dy = n.target.y - n.y, d = Math.hypot(dx, dy);
-      if (d < 2) { n.target = null; n.wait = 500 + Math.random() * 2500; n.rotation = 0; continue; }
+      if (d < 2) { n.target = null; n.wait = 300 + Math.random() * 1400; n.rotation = 0; continue; }
       const s = n.speed * dt / 1000, nx = n.x + dx / d * s, ny = n.y + dy / d * s;
-      if (this.blocked(nx, ny)) { n.target = null; n.wait = 300; continue; }
+      if (this.blocked(nx, ny)) { n.target = null; n.wait = 80; continue; }
       n.x = nx; n.y = ny; n.setFlipX(dx < 0); n.rotation = Math.sin(time / 80 + n.speed) * 0.06; n.setDepth(n.y);
     }
   }
@@ -1765,6 +1777,7 @@ const NET = {
       case "bye": feed(m.msg); break;
       case "F": feed(m.msg, true); break;
       case "c": chatLine(m); break;
+      case "SW": announceSurprise(m.who, m.xp, m.district, !!m.wallet && m.wallet === this.wallet); break;
       case "cx": chatLine({ sys: m.msg }); break;
       case "sp": if (on) sc.setSurprise(m.x, m.y, m.f, !!m.born); break;
       case "sg": if (on) sc.surpriseGone(m.by); break;
@@ -1938,10 +1951,10 @@ function updateHud() {
     // daily board from the server: today's XP, you highlighted (or added under it)
     rows = NET.board.map(r => ({ n: r.name, x: r.w === NET.wallet ? Math.max(r.xp, NET.dayXp) : r.xp, me: r.w === NET.wallet }));
     if (!rows.some(r => r.me) && NET.dayXp > 0) rows.push({ n: "YOU", x: NET.dayXp, me: true });
-    rows.sort((a, b) => b.x - a.x); rows = rows.slice(0, 6);
+    rows.sort((a, b) => b.x - a.x); rows = rows.slice(0, 10);
     if (!rows.some(r => r.me)) rows.push({ n: "YOU", x: NET.dayXp, me: true, rank: "–" });
     boardTag();
-  } else rows = BOARD.map(([n, x]) => ({ n, x })).concat([{ n: "YOU", x: state.xp, me: true }]).sort((a, b) => b.x - a.x).slice(0, 6);
+  } else rows = BOARD.map(([n, x]) => ({ n, x })).concat([{ n: "YOU", x: state.xp, me: true }]).sort((a, b) => b.x - a.x).slice(0, 10);
   $("rows").innerHTML = rows.map((r, i) =>
     `<li class="${r.me ? "me" : ""}"><span>${r.rank || (i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1 + ".")} ${esc(r.n)}</span><span>${r.x}</span></li>`).join("");
   placeChat();
@@ -1958,7 +1971,7 @@ function boardTag() {
 setInterval(() => { if (NET.live && !$("board").hidden) boardTag(); }, 30000);
 let toastTimer;
 function toast(s, color) { const t = $("toast"); t.textContent = s; t.style.color = color; t.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.opacity = 0, 1800); }
-function feed(s, win) { const d = document.createElement("div"); d.textContent = s; if (win) d.className = "win"; $("feed").prepend(d); setTimeout(() => d.remove(), 6200); while ($("feed").children.length > 4) $("feed").lastChild.remove(); }
+function feed(s, win) { const d = document.createElement("div"); d.textContent = s; if (win) d.className = "win"; $("feed").prepend(d); setTimeout(() => d.remove(), 30000); while ($("feed").children.length > 4) $("feed").lastChild.remove(); return d; }
 function showBanner(s) { const b = $("banner"); b.textContent = s; b.style.opacity = 1; setTimeout(() => b.style.opacity = 0, 1800); }
 
 // ================= PRIZE ANNOUNCEMENTS =================
@@ -1980,10 +1993,22 @@ function announceWin(name, amount, where, mine) {
   d.querySelector("canvas").getContext("2d").drawImage(chestCanvas(true), 0, 0);
   $("wins").prepend(d);
   while ($("wins").children.length > 3) $("wins").lastChild.remove();
-  setTimeout(() => d.remove(), 300600);
+  setTimeout(() => d.remove(), 30000);
   placeWins();
 }
-// prize cards sit right under the stats panel and stay up for 5 minutes
+// someone caught a district's surprise pill: a card like the prize cards, for everyone
+function announceSurprise(name, xp, where, mine) {
+  const d = document.createElement("div");
+  d.className = "wincard surprise" + (mine ? " mine" : "");
+  d.innerHTML = `<canvas class="ico" width="32" height="32"></canvas><div class="h">SURPRISE PILL!</div>
+    <div class="m">${mine ? "You caught it!" : `<b>${esc(name)}</b> caught it!`} <span class="amt">+${xp}</span> XP</div><div class="w">in ${esc(where)}</div>`;
+  const x = d.querySelector("canvas").getContext("2d"); x.drawImage(surpriseCanvas(), 0, 0); x.globalCompositeOperation = "multiply"; x.fillStyle = "#ff8ac8"; x.fillRect(0, 0, 32, 32); x.globalCompositeOperation = "destination-in"; x.drawImage(surpriseCanvas(), 0, 0);
+  $("wins").prepend(d);
+  while ($("wins").children.length > 3) $("wins").lastChild.remove();
+  setTimeout(() => d.remove(), 30000);
+  placeWins();
+}
+// prize cards sit right under the stats panel and stay up for 30 seconds
 function placeWins() { const s = $("stats"); if (!s.hidden) $("wins").style.top = Math.round(s.getBoundingClientRect().bottom + 8) + "px"; }
 window.addEventListener("resize", placeWins);
 // is a window (guide, modal, landing gate) open over the game?
@@ -2005,7 +2030,7 @@ window.addEventListener("keydown", e => {
 function chatLine(m) {
   const log = $("chatLog"), d = document.createElement("div");
   if (m.sys) { d.className = "sys"; d.textContent = m.sys; }
-  else d.innerHTML = `<span class="n ${m.b || ""}">${esc(m.n)}</span>${esc(m.x)}`;
+  else d.innerHTML = `<b class="n ${m.b || ""}">${esc(m.n)}</b> : ${esc(m.x)}`;
   const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 30;
   log.append(d); while (log.children.length > 80) log.firstChild.remove();
   if (atEnd) log.scrollTop = log.scrollHeight;
@@ -2059,16 +2084,25 @@ const PC = {
     this.game = window.pumpersGame = new Phaser.Game({ type: Phaser.AUTO, parent: "game", backgroundColor: "#120e1e", pixelArt: true, roundPixels: true,
       scale: { mode: Phaser.Scale.NONE, width: f.w, height: f.h, zoom: f.zoom } });
     let pending;
-    window.addEventListener("resize", () => { clearTimeout(pending); pending = setTimeout(() => { const n = fit(); this.game.scale.setZoom(n.zoom); this.game.scale.resize(n.w, n.h); }, 60); });
+    window.addEventListener("resize", () => { clearTimeout(pending); pending = setTimeout(() => { const n = fit(); this.game.scale.setZoom(n.zoom); this.game.scale.resize(n.w, n.h);
+      // Phaser keeps the old on-screen size with Scale.NONE: set it so the game fills the new window
+      const c = this.game.canvas; c.style.width = innerWidth + "px"; c.style.height = innerHeight + "px"; }, 60); });
     this.game.scene.add("city", City, true, { attract: true });
   },
   // profile: { name, tex?, spriteUrl?, tier, canOpen, trail }
   // NFT holders play as their own Pumper: cut it out of the sprite atlas (64 per row, 32x32 each)
+  // the NFT sprite sheet, and a texture for Pumper number n cut out of it
+  loadAtlas() { return this.atlasP || (this.atlasP = new Promise(res => { const img = new Image(); img.onload = () => { this.atlas = img; res(true); }; img.onerror = () => res(false); img.src = "static/atlas.287788f186.png"; })); },
+  atlasTex(n) {
+    const key = "nft_" + n;
+    if (!this.game.textures.exists(key)) { if (!this.atlas) return null; const c = document.createElement("canvas"); c.width = c.height = 32; c.getContext("2d").drawImage(this.atlas, ((n - 1) % 64) * 32, Math.floor((n - 1) / 64) * 32, 32, 32, 0, 0, 32, 32); this.game.textures.addCanvas(key, c); }
+    return key;
+  },
   async loadSprite(profile) {
     if (!profile.spriteNum) return;
     const n = profile.spriteNum, key = "nft_" + n;
     if (!this.game.textures.exists(key)) {
-      this.atlas = this.atlas || await new Promise(res => { const img = new Image(); img.onload = () => res(img); img.onerror = () => res(null); img.src = "static/atlas.287788f186.png"; });
+      await this.loadAtlas();
       if (this.atlas) { const c = document.createElement("canvas"); c.width = c.height = 32; c.getContext("2d").drawImage(this.atlas, ((n - 1) % 64) * 32, Math.floor((n - 1) / 64) * 32, 32, 32, 0, 0, 32, 32); this.game.textures.addCanvas(key, c); }
     }
     if (this.game.textures.exists(key)) profile.tex = key;
@@ -2077,8 +2111,9 @@ const PC = {
     await this.loadSprite(profile);
     Object.assign(state, { badge: null, nick: profile.nick || null, char: profile.name, tex: profile.tex || "p_Explorer", tier: TIERS[profile.tier] || TIERS.none, explorer: !profile.canOpen, trail: profile.trail || null, xp: 0, opened: 0, found: 0 });
     // join the multiplayer server when there is one; it decides level, box access and XP from here on
-    feed("Connecting…");
+    const conn = feed("Connecting…");
     const hi = await NET.start(profile);
+    conn.remove();
     NET.live = !!hi;
     // there is a game server but it can't be reached: look around only, so no XP is collected that can't be saved
     const serverDown = !hi && !!NET.url();

@@ -312,12 +312,19 @@
       show("livebar", j.online > 0 || j.won > 0);
     } catch { show("livebar", false); }
   }
-  $("winnersBtn").addEventListener("click", () => {
+  // "king02 won 2,500 $PUMP" · where it came from · NOT CLAIMED / SENT ✓ + Solscan
+  const STATUS = { ready: ["NOT CLAIMED", "ready"], sending: ["SENDING…", "wait"], sent: ["SENT ✓", "sent"], held: ["UNDER REVIEW", "held"] };
+  function renderWinners() {
     $("winnersList").innerHTML = winners.map(w => {
-      const amt = fmt(w.amount) + " $PUMP", inner = `<span class="amt">${amt}</span><div class="act">${w.sig ? `<a href="https://solscan.io/tx/${encodeURIComponent(w.sig)}" target="_blank" rel="noopener">Solscan</a>` : `<span class="st wait">CLAIMABLE</span>`}</div><span class="meta">${esc(w.who)} · ${esc(w.district || "")} · ${ago(w.at)}</span>`;
-      return `<div class="prow">${inner}</div>`;
+      const [label, cls] = STATUS[w.status] || (w.sig ? STATUS.sent : STATUS.ready);
+      const from = /^DAILY TOP (\d)/.test(w.district || "") ? "Daily leaderboard #" + w.district.slice(-1) : "Box in " + (w.district || "the city");
+      return `<div class="prow"><span class="who"><b>${esc(w.who)}</b> won <span class="amt">${fmt(w.amount)} $PUMP</span></span>
+        <div class="act"><span class="st ${cls}">${label}</span>${w.sig ? `<br><a href="https://solscan.io/tx/${encodeURIComponent(w.sig)}" target="_blank" rel="noopener">Solscan</a>` : ""}</div>
+        <span class="meta">${esc(from)} · ${ago(w.at)}</span></div>`;
     }).join("") || `<div class="pempty">No winners yet. Be the first.</div>`;
     show("winnersModal");
-  });
+  }
+  $("winnersBtn").addEventListener("click", renderWinners);
+  $("winnersChip").addEventListener("click", async () => { await liveStatus(); renderWinners(); });
   liveStatus(); setInterval(() => { if (!$("gate").hidden) liveStatus(); }, 30000);
 })();

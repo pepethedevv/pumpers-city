@@ -28,16 +28,16 @@ canvas { image-rendering: pixelated; }
 #bigmap div { font: 9px var(--pixel); color: var(--muted); }
 #board { right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: 210px; }
 #board h3 { margin: 0 0 6px; font-size: 10px; font-weight: 400; color: var(--gold); }
-#board ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+#board ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; min-height: calc(11 * 16px + 10 * 3px); } /* room for the top 10 + you, so the chat above never gets covered */
 #board li { display: flex; justify-content: space-between; gap: 8px; }
 #board li.me { color: var(--xp); }
 #board .tag { color: var(--muted); font-size: 8px; margin-top: 6px; }
 #feed { left: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 4px; max-width: min(420px, 60vw); }
-#feed div { background: var(--panel); border-left: 3px solid var(--line); padding: 5px 8px; font-size: 9px; animation: fade 6s forwards; }
+#feed div { background: var(--panel); border-left: 3px solid var(--line); padding: 5px 8px; font-size: 9px; animation: fade 30s forwards; }
 #feed div.win { border-left-color: var(--gold); color: var(--gold); }
 /* Prize announcements: left side, vertically centred, where the screen is empty */
 #wins { left: 10px; top: 160px; display: flex; flex-direction: column; gap: 8px; width: min(290px, 72vw); }
-.wincard { position: relative; background: linear-gradient(100deg, rgba(74, 52, 8, .95), rgba(26, 18, 6, .9)); border: 2px solid var(--gold); border-radius: 4px; padding: 9px 11px 9px 46px; box-shadow: 0 0 0 2px #1a1206, 0 0 18px rgba(255, 214, 103, .35); animation: winin .4s cubic-bezier(.2, 1.4, .4, 1), winout .5s 300s forwards; }
+.wincard { position: relative; background: linear-gradient(100deg, rgba(74, 52, 8, .95), rgba(26, 18, 6, .9)); border: 2px solid var(--gold); border-radius: 4px; padding: 9px 11px 9px 46px; box-shadow: 0 0 0 2px #1a1206, 0 0 18px rgba(255, 214, 103, .35); animation: winin .4s cubic-bezier(.2, 1.4, .4, 1), winout .5s 29.5s forwards; }
 .wincard .ico { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; image-rendering: pixelated; }
 .wincard .h { color: var(--hot); font-size: 8px; letter-spacing: 1px; }
 .wincard .m { font-size: 9px; line-height: 1.7; margin-top: 3px; }
@@ -48,7 +48,7 @@ canvas { image-rendering: pixelated; }
 @keyframes winin { from { transform: translateX(-120%); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes winout { to { transform: translateX(-120%); opacity: 0 } }
 @media (max-width: 640px) { .wincard { padding-left: 40px; } #wins { width: min(240px, 60vw); } }
-@keyframes fade { 0%, 80% { opacity: 1 } 100% { opacity: 0 } }
+@keyframes fade { 0%, 95% { opacity: 1 } 100% { opacity: 0 } }
 #toast { left: 50%; top: 22%; transform: translateX(-50%); font-size: 14px; text-align: center; color: var(--gold); text-shadow: 2px 2px 0 #4a1a3a; transition: opacity .3s; }
 #banner { left: 50%; top: 14%; transform: translateX(-50%); font-size: 20px; color: var(--fg); text-shadow: 3px 3px 0 #4a1a3a; transition: opacity .8s; white-space: nowrap; }
 #help { left: 50%; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); font-size: 8px; color: var(--muted); text-align: center; }
@@ -70,12 +70,13 @@ canvas { image-rendering: pixelated; }
 .chars img { width: 72px; height: 72px; image-rendering: pixelated; }
 .chars small { color: var(--muted); font-weight: 400; font-size: 11px; }
 .boardbtn { display: none; }
+.chip .sm { display: none; }
 /* chat: right column between the minimap and the leaderboard (placed by JS) */
 #chat { right: 10px; width: 210px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; pointer-events: auto; font-family: var(--body); font-size: 12px; line-height: 1.35; padding: 6px 8px; background: rgba(18, 14, 30, .78); }
 #chat[hidden] { display: none; }
 .chatlog { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; scrollbar-width: thin; }
 .chatlog div { color: #e8e2f6; }
-.chatlog .n { font-weight: 600; color: #c9bfe4; margin-right: 4px; }
+.chatlog .n { font-weight: 700; color: #c9bfe4; }
 .chatlog .sys { color: var(--muted); font-style: italic; }
 .n.gold { color: #ffd667; } .n.silver { color: #dfe6f2; } .n.bronze { color: #e8a060; }
 #chatInput { width: 100%; box-sizing: border-box; padding: 6px 7px; font: 12px var(--body); color: var(--fg); background: #0c0a14; border: 1px solid var(--line); border-radius: 3px; outline: none; }
@@ -85,6 +86,9 @@ canvas { image-rendering: pixelated; }
   #board { display: none; }
   #board.open { display: block; right: 10px; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); z-index: 6; pointer-events: auto; }
   .boardbtn { display: inline-block; }
+  /* phones: short icon labels so the whole row fits */
+  .chip .lg { display: none; } .chip .sm { display: inline; }
+  .chip { font-size: 11px; padding: 7px 10px; } #leave { font-size: 8px; }
   #chat { display: none; }
   #chat.open { display: flex; left: 10px; right: 10px; width: auto; top: auto !important; bottom: calc(52px + env(safe-area-inset-bottom, 0px)) !important; height: 42vh; z-index: 7; }
   #minimap { width: 100px; }
@@ -248,3 +252,11 @@ details p { margin: 10px 0 0 !important; color: #d6cfe8; }
 /* test mode banner: nothing in ?demo=1 is real */
 #demobar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; padding: 6px 8px; text-align: center; font: 9px var(--pixel); color: #1a1408; background: repeating-linear-gradient(45deg, #ffd667 0 14px, #f0b840 14px 28px); pointer-events: none; }
 .wincard.demo .h::before { content: "DEMO · "; }
+
+/* surprise pill card */
+.wincard.surprise { border-color: #ff8ac8; background: linear-gradient(100deg, rgba(80, 20, 60, .95), rgba(28, 8, 24, .9)); box-shadow: 0 0 0 2px #1a0612, 0 0 18px rgba(255, 138, 200, .4); }
+.wincard.surprise .h { color: #ff9ad0; }
+.wincard.surprise .amt { color: #ffd0ea; text-shadow: 2px 2px 0 #5a1040; }
+/* winners list */
+.prow .who b { font-weight: 700; color: var(--fg); }
+.prow .st.ready { color: #ffb070; }

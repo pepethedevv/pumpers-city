@@ -101,9 +101,14 @@ async function loadStats() {
   if (!dbReady()) return;
   try {
     const [s] = await db("prize_stats?select=*");
-    const recent = await db("prizes?select=wallet,amount,district,status,signature,created_at&order=created_at.desc&limit=10");
+    const recent = await db("prizes?select=wallet,amount,district,status,signature,created_at&order=created_at.desc&limit=30");
+    // show the winners' player names (from memory, else from the players table)
+    const need = [...new Set(recent.map(r => r.wallet))].filter(w => !known.get(w)?.name);
+    const names = new Map();
+    if (need.length) for (const row of await db(`players?wallet=in.(${need.join(",")})&select=wallet,name,name_key`)) if (row.name_key) names.set(row.wallet, row.name);
     stats = { won: +s?.won || 0, sent: +s?.sent || 0, wins: +s?.wins || 0,
-      recent: recent.map(r => ({ who: short(r.wallet), amount: +r.amount, district: r.district, sig: r.status === "sent" ? r.signature : null, at: r.created_at })) };
+      recent: recent.map(r => ({ who: known.get(r.wallet)?.name || names.get(r.wallet) || short(r.wallet), amount: +r.amount, district: r.district,
+        status: r.status, sig: r.status === "sent" ? r.signature : null, at: r.created_at })) };
   } catch (e) { log("stats:", e.message); }
 }
 
@@ -320,7 +325,7 @@ async function hitLock(p, id, e) {
   if (prize) {
     log("PRIZE", short(p.wallet), prize, MAP_NAMES[r.map], "· still hidden in this batch:", batch);
     const w = { who: p.name, wallet: p.wallet, amount: prize, district: MAP_NAMES[r.map], at: new Date().toISOString() };
-    stats.recent.unshift({ who: short(p.wallet), amount: prize, district: w.district, sig: null, at: w.at }); stats.recent.length = Math.min(stats.recent.length, 10);
+    stats.recent.unshift({ who: p.name, amount: prize, district: w.district, status: "ready", sig: null, at: w.at }); stats.recent.length = Math.min(stats.recent.length, 30);
     allSend({ t: "W", ...w });
   }
 }
@@ -381,7 +386,7 @@ function tick() {
 
 // ---------------- surprise pills: one per district, wandering around ----------------
 // Catch it, pick its lock, get a big XP boost. A new one appears in that district 12 hours later.
-const SURPRISE_ID = -1, SURPRISE_RESPAWN = 12 * 3600_000, SURPRISE_SPEED = 0.075; // px per ms (players walk 0.11+)
+const SURPRISE_ID = -1, SURPRISE_RESPAWN = 12 * 3600_000, SURPRISE_SPEED = 0.06; // px per ms, about half walking speed (players walk 0.11+)
 const surprise = {};
 for (const k of MAPKEYS) surprise[k] = { map: k, alive: false, x: 0, y: 0, goal: null, respawnAt: 0, heldBy: null, heldUntil: 0, sent: "" };
 const pillSend = (map, msg) => { const s = JSON.stringify(msg); for (const r of rooms.values()) if (r.map === map) for (const p of r.players) if (p.ws.readyState === 1) p.ws.send(s); };
@@ -400,17 +405,15 @@ function stepSurprises() {
     if (sp.heldBy && sp.heldUntil > now) continue; // someone is picking its lock: it holds still
     sp.heldBy = null;
     const m = getMap(sp.map);
+    // it floats straight through walls, water and buildings, so it never gets stuck; every stop it heads for
+    // is a spot players can walk to
     if (!sp.goal || Math.hypot(sp.goal.x - sp.x, sp.goal.y - sp.y) < 4) {
       let g = randomWalkable(m);
-      for (let k = 0; k < 20 && Math.hypot(g.x - sp.x, g.y - sp.y) > 260; k++) g = randomWalkable(m); // short hops
+      for (let k = 0; k < 20 && Math.hypot(g.x - sp.x, g.y - sp.y) > 400; k++) g = randomWalkable(m);
       sp.goal = g;
     }
-    const dx = sp.goal.x - sp.x, dy = sp.goal.y - sp.y, d = Math.hypot(dx, dy), st = Math.min(d, SURPRISE_SPEED * TICK_MS);
-    const nx = sp.x + dx / d * st, ny = sp.y + dy / d * st;
-    if (!blocked(m, nx, ny)) { sp.x = nx; sp.y = ny; }
-    else if (!blocked(m, nx, sp.y)) sp.x = nx;
-    else if (!blocked(m, sp.x, ny)) sp.y = ny;
-    else sp.goal = null;
+    const dx = sp.goal.x - sp.x, dy = sp.goal.y - sp.y, d = Math.hypot(dx, dy) || 1, st = Math.min(d, SURPRISE_SPEED * TICK_MS);
+    sp.x += dx / d * st; sp.y += dy / d * st;
     const k = Math.round(sp.x) + "," + Math.round(sp.y);
     if (k !== sp.sent) { sp.sent = k; pillSend(sp.map, { t: "sp", x: Math.round(sp.x), y: Math.round(sp.y), f: dx < 0 ? 1 : 0 }); }
   }
@@ -439,7 +442,7 @@ async function catchSurprise(p) {
   p.s.xp += xp; p.s.dayXp = (p.s.dayXp || 0) + xp; p.s.dirty = !!p.wallet;
   send(p, { t: "O", id: SURPRISE_ID, xp, total: p.s.xp, dayXp: p.s.dayXp, opened: p.s.opened, found: p.s.found, prize: 0 });
   pillSend(r.map, { t: "sg", by: p.id });
-  allSend({ t: "F", msg: `${p.name} caught the surprise pill in ${MAP_NAMES[r.map]}! +${xp} XP` });
+  allSend({ t: "SW", who: p.name, wallet: p.wallet, xp, district: MAP_NAMES[r.map] });
   log("surprise caught", MAP_NAMES[r.map], p.name, xp);
   if (dbReady()) db("surprise_pills?on_conflict=map", { method: "POST", prefer: "resolution=merge-duplicates", body: [{ map: r.map, respawn_at: new Date(sp.respawnAt).toISOString(), caught_by: p.wallet || null, caught_at: new Date().toISOString() }] }).catch(e => log("save pill:", e.message));
 }

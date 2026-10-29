@@ -24,7 +24,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Sans:wght@400;600&display=swap">
-<link rel="stylesheet" href="static/style.f0ae64445e.css">
+<link rel="stylesheet" href="static/style.ec84581538.css">
 </head>
 <body>
 <div id="game"></div>
@@ -54,7 +54,7 @@
 <div class="hud" id="toast"></div>
 <div class="hud" id="banner"></div>
 <div class="hud" id="help" hidden></div>
-<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide>HOW TO PLAY</button><button type="button" class="chip gold" id="prizesBtn" hidden>MY PRIZES <i id="prizeDot" hidden></i></button><button type="button" class="chip boardbtn" id="boardBtn">🏆</button><button type="button" class="chip boardbtn" id="chatBtn">💬</button><button type="button" class="chip" id="switch" hidden>SWITCH PUMPER</button><button type="button" class="chip" id="leave">LEAVE</button></div>
+<div class="hud" id="ingame" hidden><button type="button" class="chip" data-open-guide aria-label="How to play"><span class="lg">HOW TO PLAY</span><span class="sm">?</span></button><button type="button" class="chip" id="winnersChip" aria-label="Winners"><span class="lg">WINNERS</span><span class="sm">🏅</span></button><button type="button" class="chip gold" id="prizesBtn" hidden aria-label="My prizes"><span class="lg">MY PRIZES</span><span class="sm">🎁</span> <i id="prizeDot" hidden></i></button><button type="button" class="chip boardbtn" id="boardBtn" aria-label="Leaderboard">🏆</button><button type="button" class="chip boardbtn" id="chatBtn" aria-label="Chat">💬</button><button type="button" class="chip" id="switch" hidden aria-label="Switch Pumper"><span class="lg">SWITCH PUMPER</span><span class="sm">⇄</span></button><button type="button" class="chip" id="leave">LEAVE</button></div>
 <div class="hud panel" id="lock" hidden>
   <div class="t">PICK THE LOCK</div>
   <div class="lockbar"><i id="zone"></i><b id="needle"></b></div>
@@ -130,8 +130,8 @@
 <div class="modal" id="winnersModal" hidden>
   <div class="sheet">
     <button type="button" class="close" data-close aria-label="Close">×</button>
-    <h2>RECENT WINNERS</h2>
-    <p class="muted">Every prize is paid on-chain. Tap a paid prize to see it on Solscan.</p>
+    <h2>WINNERS</h2>
+    <p class="muted">Box prizes and daily leaderboard prizes. Every payout is on-chain: tap Solscan to check it.</p>
     <div id="winnersList" class="plist"></div>
   </div>
 </div>
@@ -218,7 +218,7 @@
         </div>
         <h3>The surprise pill</h3>
         <p>Every district has <b>one surprise pill</b> wandering its streets. It glows pink and never stops moving. Catch up with it, press E (or tap it) and pick its lock to get a <b>big XP boost</b>, worth many boxes at once. It's the same for everyone: level multipliers don't apply to the surprise pill. It stands still while you pick the lock, and its lock is a little harder.</p>
-        <p>Once someone catches it, a new surprise pill appears in that district <b>12 hours later</b>. Look for the blinking pink dot on the minimap.</p>
+        <p>It drifts through walls and buildings, and it isn't shown on the map: you have to find it. Once someone catches it, a new surprise pill appears in that district <b>12 hours later</b>.</p>
         <p class="note">Which box holds a prize is decided by our server when the box is opened. Nobody, including your browser, can see it in advance.</p>
       </section>
 
@@ -344,7 +344,7 @@
 
 <script src="static/config.f3eae49c71.js"></script>
 <script src="static/phaser.min.62081f6a1b.js"></script>
-<script src="static/game.19d364391f.js"></script>
-<script src="static/site.83267c23cf.js"></script>
+<script src="static/game.9729cf278a.js"></script>
+<script src="static/site.73734fc3bd.js"></script>
 </body>
 </html>
