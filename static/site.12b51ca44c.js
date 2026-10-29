@@ -56,13 +56,25 @@
 
   $("guest").addEventListener("click", () => {
     if (window.PC_DEMO) return openDemo();
-    askName({ name: "Guest", tier: "none", canOpen: false });
+    nameThenEnter({ name: "Guest", tier: "none", canOpen: false });
   });
 
   // ---------- pick a name (guests and wallets) ----------
   const serverHttp = () => (new URLSearchParams(location.search).get("server") || cfg.GAME_SERVER || "").replace(/^ws/, "http").replace(/\/$/, "");
   const NAME_RE = /^[A-Za-z0-9_]{3,16}$/;
   let nameFor = null;
+  // returning players skip the name screen: wallets by their wallet, guests by their network
+  async function nameThenEnter(profile) {
+    const base = serverHttp(); let name = null;
+    if (base) try {
+      const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 3000);
+      const j = await (await fetch(`${base}/whoami${profile.auth ? "?w=" + profile.auth.wallet : ""}`, { cache: "no-store", signal: ctl.signal })).json(); clearTimeout(t);
+      name = j && NAME_RE.test(j.name || "") ? j.name : null;
+    } catch {}
+    if (!name) return askName(profile);
+    try { localStorage.setItem("pc_name", name); } catch {}
+    nameFor = profile; profile.nick = name; enter(profile);
+  }
   function askName(profile) {
     nameFor = profile;
     document.querySelectorAll(".modal").forEach(m => m.hidden = true);
@@ -225,7 +237,7 @@
     renderPicker(d.nfts || []);
     $("accessTitle").textContent = "YOUR PASS";
     $("enter").textContent = "ENTER THE CITY";
-    $("enter").onclick = () => { askName(profileFor(chosen)); $("switch").hidden = !((d.nfts || []).length > 1); show("prizesBtn"); refreshPrizes(); };
+    $("enter").onclick = () => { nameThenEnter(profileFor(chosen)); $("switch").hidden = !((d.nfts || []).length > 1); show("prizesBtn"); refreshPrizes(); };
     show("accessModal");
   }
   // switch Pumper while playing

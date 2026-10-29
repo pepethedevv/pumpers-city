@@ -34,8 +34,12 @@ function checkName(n) {
   return { name: n };
 }
 // is this name used by someone else (online now, or a wallet that saved it before)?
-async function nameTaken(name, wallet) {
+// guests keep their name by network (IP) for 30 days: coming back as a guest from the same network brings it back
+const guestNames = new Map(); // ip → { name, at }
+const GUEST_NAME_MS = 30 * 86400_000;
+async function nameTaken(name, wallet, ip) {
   const k = name.toLowerCase();
+  for (const [gip, g] of guestNames) if (gip !== ip && g.name.toLowerCase() === k && Date.now() - g.at < GUEST_NAME_MS) return true;
   for (const o of players.values()) if (o.nick && o.nick.toLowerCase() === k && (!wallet || o.wallet !== wallet)) return true;
   for (const [w, s] of known) if (w !== wallet && s.name && s.name.toLowerCase() === k) return true;
   if (dbReady()) try { const r = await db(`players?name_key=eq.${encodeURIComponent(k)}${wallet ? "&wallet=neq." + wallet : ""}&select=wallet&limit=1`); if (r.length) return true; } catch (e) { log("name check:", e.message); }
@@ -254,9 +258,10 @@ async function hello(p, msg) {
   const cn = checkName(msg.nick);
   if (cn.name) {
     let n = cn.name;
-    for (let k = 0; k < 20 && await nameTaken(n, wallet); k++) n = cn.name.slice(0, 13) + Math.floor(10 + Math.random() * 990);
+    for (let k = 0; k < 20 && await nameTaken(n, wallet, p.ip); k++) n = cn.name.slice(0, 13) + Math.floor(10 + Math.random() * 990);
     p.nick = n;
     if (wallet && p.s.name !== n) { p.s.name = n; p.s.dirty = true; }
+    if (!wallet && p.ip) saveGuestName(p.ip, n);
   } else if (wallet && p.s.name) p.nick = p.s.name;
   try { await access(p); } catch (e) { log("holdings:", e.message); p.nfts = []; p.acc = { canOpen: false, level: "none", trail: false }; err = err || "holdings check failed"; }
   if (DEV && p.dev) p.acc = { canOpen: !!p.dev.canOpen, level: TIERS[p.dev.tier] ? p.dev.tier : "none", trail: false };
@@ -602,6 +607,30 @@ function say(p, text) {
   allSend(msg);
 }
 
+function saveGuestName(ip, name) {
+  const g = guestNames.get(ip);
+  if (g && g.name === name && Date.now() - g.at < 86400_000) return;
+  guestNames.set(ip, { name, at: Date.now() });
+  if (dbReady()) db("guest_names?on_conflict=ip", { method: "POST", body: [{ ip, name, updated_at: new Date().toISOString() }], prefer: "resolution=merge-duplicates" }).catch(e => log("guest name:", e.message));
+}
+async function loadGuestNames() {
+  if (!dbReady()) return;
+  try { for (const r of await db(`guest_names?updated_at=gt.${new Date(Date.now() - GUEST_NAME_MS).toISOString()}&select=ip,name,updated_at&limit=200000`)) guestNames.set(r.ip, { name: r.name, at: Date.parse(r.updated_at) }); }
+  catch (e) { log("load guest names:", e.message); }
+}
+loadGuestNames();
+const ipOf = req => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+// the name this wallet (or, for guests, this network) picked before, so returning players skip the name screen
+async function savedName(w, ip) {
+  if (w) {
+    if (known.get(w)?.name) return known.get(w).name;
+    if (dbReady()) try { const [r] = await db(`players?wallet=eq.${w}&name_key=not.is.null&select=name`); if (r) return r.name; } catch (e) { log("saved name:", e.message); }
+    return null;
+  }
+  const g = guestNames.get(ip);
+  return g && Date.now() - g.at < GUEST_NAME_MS ? g.name : null;
+}
+
 // ---------------- connections ----------------
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
@@ -613,7 +642,13 @@ const server = http.createServer((req, res) => {
     const w = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(u.searchParams.get("w") || "") ? u.searchParams.get("w") : null;
     const cn = checkName(u.searchParams.get("n"));
     if (cn.err) return res.end(JSON.stringify({ ok: false, err: cn.err }));
-    nameTaken(cn.name, w).then(t => res.end(JSON.stringify(t ? { ok: false, err: "That name is taken" } : { ok: true })));
+    nameTaken(cn.name, w, ipOf(req)).then(t => res.end(JSON.stringify(t ? { ok: false, err: "That name is taken" } : { ok: true })));
+    return;
+  }
+  if (u.pathname === "/whoami") {
+    res.setHeader("content-type", "application/json"); res.setHeader("cache-control", "no-store");
+    const w = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(u.searchParams.get("w") || "") ? u.searchParams.get("w") : null;
+    savedName(w, ipOf(req)).then(name => res.end(JSON.stringify({ name })));
     return;
   }
   if (u.pathname === "/" || u.pathname === "/health") return res.end("ok");
@@ -624,7 +659,7 @@ const originOk = o => { if (DEV) return true; try { return SITES.includes(new UR
 
 wss.on("connection", (ws, req) => {
   if (!originOk(req.headers.origin) || players.size >= MAX_PLAYERS) { ws.close(4003, players.size >= MAX_PLAYERS ? "full" : "origin"); return; }
-  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  const ip = ipOf(req);
   const p = { id: nextId++, ws, ip, wallet: null, name: "Guest", skin: null, trail: null, nfts: [], acc: { canOpen: false, level: "none", trail: false },
     x: 0, y: 0, f: false, room: null, s: { xp: 0, opened: 0, found: 0 }, opens: [], jam: new Map(), seen: new Map(), alive: true, rate: 0, rateT: Date.now() };
   players.set(p.id, p);
