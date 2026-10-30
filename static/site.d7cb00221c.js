@@ -22,7 +22,7 @@
   if (window.PC_DEMO) show("demobar");
 
   // ---------- config on the page ----------
-  if (cfg.X_URL) $("xlink").href = cfg.X_URL;
+  if (cfg.X_URL && $("xlink")) $("xlink").href = cfg.X_URL;
   if (cfg.MINT_URL) { $("mintBtn").href = cfg.MINT_URL; show("mintBtn"); }
   if (cfg.CA) {
     $("caval").textContent = cfg.CA; show("ca");
@@ -231,7 +231,7 @@
     } else if (d.offline) {
       html += `</dl><div class="notice">We couldn't check your holdings right now. You can enter as an explorer and reconnect later.</div>`;
     } else {
-      html += `</dl><div class="notice">$PUMPERS and the NFTs aren't live yet. Until launch, everyone explores the city as a guest. Follow <a href="${cfg.X_URL}" target="_blank" rel="noopener">@pumperscity</a> for the launch.</div>`;
+      html += `</dl><div class="notice">$PUMPERS and the NFTs aren't live yet. Until launch, everyone explores the city as a guest. Stay tuned for the launch.</div>`;
     }
     body.innerHTML = html; body.hidden = false;
     renderPicker(d.nfts || []);
